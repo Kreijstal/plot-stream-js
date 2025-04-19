@@ -328,10 +328,12 @@ class StreamingChart {
         ) {
             isShiftZoom = true;
             sourceEvent.preventDefault();
-            const wheelDeltaX = sourceEvent.deltaX || 0; // <-- Get deltaX
+            const wheelDeltaY = sourceEvent.deltaY || 0; // <-- Use deltaY for direction
+            const wheelDeltaX_reported = sourceEvent.deltaX || 0; // Keep reported deltaX for logging
             const pointerX_svg = sourceEvent.offsetX;
             const pointerX_plot = pointerX_svg - this.#margin.left;
-            const zoomDirection = wheelDeltaX < 0 ? independentZoomFactor : 1 / independentZoomFactor;
+            // Use deltaY to determine zoom direction
+            const zoomDirection = wheelDeltaY < 0 ? independentZoomFactor : 1 / independentZoomFactor;
             const xValue_plot = this.#referenceXScale.invert(pointerX_plot);
             const [x0, x1] = this.#referenceXScale.domain();
             newXDomain = [
@@ -342,7 +344,8 @@ class StreamingChart {
 
             // --- Debug log ---
             if (this.#config.debug) {
-                console.log(`[DEBUG] ShiftScroll(X): deltaX=${wheelDeltaX.toFixed(3)}`); // <-- Log deltaX
+                // Log both reported deltaX and the deltaY used for direction
+                console.log(`[DEBUG] ShiftScroll(X): reported deltaX=${wheelDeltaX_reported.toFixed(3)}, used deltaY=${wheelDeltaY.toFixed(3)} for direction`);
             }
             // --- End Debug log ---
         }
