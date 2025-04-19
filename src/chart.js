@@ -150,14 +150,109 @@ class StreamingChart {
     }
 
     #setupInteractions() {
-        if (!this.#targetElement || !this.#config.interactions.zoom) return;
+        if (!this.#targetElement) return;
 
-        this.#zoomBehavior = initializeZoom(this.#d3, this.#width, this.#height, this.#onZoom.bind(this));
-        applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, this.#isZoomEnabled());
+        if (this.#config.interactions.zoom) {
+            this.#zoomBehavior = initializeZoom(this.#d3, this.#width, this.#height, this.#onZoom.bind(this));
+            applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, this.#isZoomEnabled());
+        }
+
+        // Set up drag behavior for panning
+        if (this.#config.interactions.pan) {
+            this.#setupDragBehavior();
+        }
     }
 
-     #isZoomEnabled() {
-        return this.#config.interactions.zoom || this.#config.interactions.pan;
+    #setupDragBehavior() {
+        // Store initial positions and domains for the drag operation
+        let dragStart = null;
+        let startXDomain = null;
+        let startYDomain = null;
+
+        const onDragStart = (event) => {
+            if (this.#isDestroyed) return;
+            event.preventDefault();
+            
+            dragStart = { x: event.x, y: event.y };
+            startXDomain = [...this.#scales.xScale.domain()];
+            startYDomain = [...this.#scales.yScale.domain()];
+
+            // Disable follow mode on drag start
+            if (this.#isFollowing) {
+                this.#isFollowing = false;
+                this.#updateFollowButtonAppearance();
+                console.log("Follow mode turned OFF due to user pan.");
+            }
+        };
+
+        const onDrag = (event) => {
+            if (this.#isDestroyed || !dragStart) return;
+            event.preventDefault();
+
+            // Calculate pixel movement
+            const dx = event.x - dragStart.x;
+            const dy = event.y - dragStart.y;
+
+            // Convert pixel movement to domain values
+            const xRange = this.#scales.xScale.range();
+            const yRange = this.#scales.yScale.range();
+            const xDomainWidth = startXDomain[1] - startXDomain[0];
+            const yDomainHeight = startYDomain[1] - startYDomain[0];
+
+            // Calculate domain shift
+            const xShift = (dx * xDomainWidth) / (xRange[1] - xRange[0]);
+            const yShift = (dy * yDomainHeight) / (yRange[0] - yRange[1]); // Note: y range is inverted
+
+            // Apply the shift to both axes
+            this.#scales.xScale.domain([startXDomain[0] - xShift, startXDomain[1] - xShift]);
+            this.#scales.yScale.domain([startYDomain[0] - yShift, startYDomain[1] - yShift]);
+
+            // Store the current domains if follow mode is off
+            if (!this.#isFollowing) {
+                this.#frozenXDomain = this.#scales.xScale.domain();
+                this.#frozenYDomain = this.#scales.yScale.domain();
+            }
+
+            // Redraw
+            this.#updateScalesAndAxes();
+            this.#updateChartLines();
+        };
+
+        const onDragEnd = (event) => {
+            if (this.#isDestroyed) return;
+            dragStart = null;
+            startXDomain = null;
+            startYDomain = null;
+        };
+
+        // Add drag handlers to the zoom overlay
+        this.#svgElements.zoomOverlay
+            .style("cursor", "grab")
+            .on("mousedown.drag", (event) => {
+                this.#svgElements.zoomOverlay.style("cursor", "grabbing");
+                onDragStart(event);
+            })
+            .on("mousemove.drag", onDrag)
+            .on("mouseup.drag mouseleave.drag", (event) => {
+                this.#svgElements.zoomOverlay.style("cursor", "grab");
+                onDragEnd(event);
+            })
+            // Touch events
+            .on("touchstart.drag", (event) => {
+                event.preventDefault();
+                const touch = event.touches[0];
+                onDragStart({ x: touch.clientX, y: touch.clientY, preventDefault: () => {} });
+            })
+            .on("touchmove.drag", (event) => {
+                event.preventDefault();
+                const touch = event.touches[0];
+                onDrag({ x: touch.clientX, y: touch.clientY, preventDefault: () => {} });
+            })
+            .on("touchend.drag", onDragEnd);
+    }
+
+    #isZoomEnabled() {
+        return this.#config.interactions.zoom; // Only check zoom, as pan is handled separately
     }
 
     #setupResizeHandling() {
@@ -537,8 +632,20 @@ class StreamingChart {
             this.#updateChartLegend();
         }
 
-        if (needsInteractionUpdate && this.#zoomBehavior) {
-            applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, this.#isZoomEnabled());
+        if (needsInteractionUpdate && this.#targetElement) {
+            if (this.#zoomBehavior) {
+                applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, this.#isZoomEnabled());
+            }
+            
+            // Handle pan behavior changes
+            if (this.#config.interactions.pan) {
+                this.#setupDragBehavior(); // Set up drag if pan is enabled
+            } else {
+                // Remove drag behavior if pan is disabled
+                this.#svgElements.zoomOverlay
+                    .on(".drag", null)
+                    .style("cursor", null);
+            }
         }
 
         if (needsRedraw) {
@@ -568,7 +675,10 @@ class StreamingChart {
         if (this.#targetElement) {
             cleanupDOM(this.#svgElements.svg, this.#resizeObserver);
             if (this.#zoomBehavior && this.#svgElements.zoomOverlay) {
-                this.#svgElements.zoomOverlay.on(".zoom", null);
+                this.#svgElements.zoomOverlay
+                    .on(".zoom", null)
+                    .on(".drag", null) // Remove all drag event handlers
+                    .style("cursor", null); // Reset cursor style
             }
             this.#zoomBehavior?.on("zoom", null);
         }
