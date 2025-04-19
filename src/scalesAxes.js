@@ -105,9 +105,17 @@ function calculateXDomain(d3, config, xScale, dataStore) {
         return [configRange.min, configRange.max];
     }
 
-    // Priority 2: Current zoomed/panned view (if different from full data extent)
-    // This logic is slightly simplified; a dedicated 'isZoomed' flag might be better.
+    // Get full data range
     const fullDataX = getFullXDomain(d3, dataStore);
+
+    // Priority 2: Auto-scaling when max is null (follow data)
+    if (configRange && configRange.max === null) {
+        let [minX, maxX] = fullDataX;
+        minX = configRange && typeof configRange.min === "number" ? configRange.min : minX;
+        return [minX, maxX];
+    }
+
+    // Priority 3: Current zoomed/panned view (if different from full data extent)
     if (
         currentXDomain[0] !== fullDataX[0] ||
         currentXDomain[1] !== fullDataX[1]
@@ -121,7 +129,7 @@ function calculateXDomain(d3, config, xScale, dataStore) {
          return [minX, maxX];
     }
 
-    // Priority 3: Auto-scale based on full data, respecting individual config limits
+    // Priority 4: Default auto-scale based on full data, respecting individual config limits
     let [minX, maxX] = fullDataX;
     minX = configRange && typeof configRange.min === "number" ? configRange.min : minX;
     maxX = configRange && typeof configRange.max === "number" ? configRange.max : maxX;
