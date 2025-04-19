@@ -294,13 +294,28 @@ class StreamingChart {
 
         if (!this.#isFollowing) {
             // --- Turning Follow OFF ---
+            // Store the current view domains
             this.#frozenXDomain = this.#scales.xScale.domain();
             this.#frozenYDomain = this.#scales.yScale.domain();
+            // The currentZoomTransform should already reflect this state due to synchronization
         } else {
             // --- Turning Follow ON ---
             this.#frozenXDomain = null;
             this.#frozenYDomain = null;
+
+            // Recalculate domains based on data/config
             this.#updateScalesAndAxes();
+
+            // --- NEW: Reset D3 zoom state to identity ---
+            if (this.#zoomBehavior && this.#svgElements.zoomOverlay) {
+                this.#currentZoomTransform = this.#d3.zoomIdentity;
+                // Silently update the zoom behavior's internal state
+                this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+                console.log("Reset D3 zoom state as follow mode turned ON.");
+            }
+            // --- End NEW ---
+
+            // Redraw lines with the new scales
             this.#updateChartLines();
         }
         this.#updateFollowButtonAppearance();
@@ -471,7 +486,7 @@ class StreamingChart {
             if (newPoints.length > 0) {
                  this.#dataStore[seriesId].push(...newPoints);
                  pruneData(seriesId, this.#dataStore, this.#config);
-                 needsScaleUpdate = true;
+                 needsScaleUpdate = true; // Flag that scales *might* need update if following
                  latestX = Math.max(latestX, newPoints[newPoints.length - 1].x);
                  dataAdded = true;
             }
@@ -479,9 +494,62 @@ class StreamingChart {
 
         if (!dataAdded) return;
 
-        if (this.#targetElement && needsScaleUpdate) {
-            this.#updateScalesAndAxes();
-            this.#updateChartLines();
+        if (this.#targetElement) {
+            if (this.#isFollowing && needsScaleUpdate) {
+                this.#updateScalesAndAxes(); // Updates scales and redraws axes/grid
+                this.#updateChartLines();    // Redraws lines based on new scales
+            } else {
+                // Follow is OFF or no scale update needed (e.g., data added outside current view)
+                this.#updateChartLines(); // Redraw lines based on existing (frozen) scales
+
+                // --- NEW: Re-synchronize D3 zoom state if follow is OFF --- 
+                // This ensures zoom behavior is aware of the current view relative to the 
+                // potentially changed full data extent, even if the view itself didn't change.
+                if (!this.#isFollowing && this.#zoomBehavior && dataAdded) { 
+                    try {
+                        const fullX = getFullXDomain(this.#d3, this.#dataStore); // Use updated dataStore
+                        const fullY = getFullYDomain(this.#d3, this.#dataStore); // Use updated dataStore
+
+                        // Ensure ranges are valid before creating temp scales
+                        const xRange = this.#scales.xScale.range();
+                        const yRange = this.#scales.yScale.range();
+                        if (!xRange || !yRange || xRange.length < 2 || yRange.length < 2) {
+                            console.warn("Cannot sync zoom: Invalid scale ranges.");
+                            return;
+                        }
+
+                        const tempXScale = this.#d3.scaleLinear().domain(fullX).range(xRange);
+                        const tempYScale = this.#d3.scaleLinear().domain(fullY).range(yRange);
+
+                        // Use the frozen domains if available, otherwise current domains
+                        const frozenX = this.#frozenXDomain || this.#scales.xScale.domain();
+                        const frozenY = this.#frozenYDomain || this.#scales.yScale.domain();
+
+                        // Ensure frozen domains are valid
+                        if (!frozenX || !frozenY || frozenX.length < 2 || frozenY.length < 2) {
+                             console.warn("Cannot sync zoom: Invalid frozen/current domains.");
+                             return;
+                        }
+
+                        // Calculate the transform needed to map the temp scales to the frozen domains
+                        const newTransform = this.#d3.zoomIdentity
+                            .translate(xRange[0], yRange[0]) // Start with base translation
+                            .scale(1) // Start with base scale
+                            .rescaleX(tempXScale.copy().domain(frozenX))
+                            .rescaleY(tempYScale.copy().domain(frozenY));
+
+                        // Store the potentially updated transform state
+                        this.#currentZoomTransform = newTransform;
+
+                        // Silently update the D3 zoom behavior's internal state
+                        this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+                        // console.log("Re-synchronized D3 zoom state after addData (follow OFF).");
+                    } catch (error) {
+                        console.error("Error during zoom state synchronization in addData:", error);
+                    }
+                }
+                // --- End NEW ---
+            }
         }
     }
 
