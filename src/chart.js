@@ -232,11 +232,15 @@ class StreamingChart {
         this.#currentZoomTransform = handleZoom(
             event, this.#d3, this.#config, this.#scales,
             getFullX, getFullY,
-            redrawAxesAndGrid, redrawLines
+            redrawAxesAndGrid, redrawLines,
+            this.#currentZoomTransform // Pass the previous transform state
         );
-        // Store the domains resulting from the zoom
-        this.#frozenXDomain = this.#scales.xScale.domain();
-        this.#frozenYDomain = this.#scales.yScale.domain();
+        // Store the domains resulting from the zoom/pan
+        // Only store if follow mode is off, otherwise follow mode dictates domain
+        if (!this.#isFollowing) {
+            this.#frozenXDomain = this.#scales.xScale.domain();
+            this.#frozenYDomain = this.#scales.yScale.domain();
+        }
     }
 
     #onResize() {

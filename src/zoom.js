@@ -63,18 +63,43 @@ function updateZoomExtents(zoomBehavior, width, height) {
  * @param {function} redrawLines - Function to redraw data lines.
  * @returns {object} - The new zoom transform state.
  */
-function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, redrawAxesAndGrid, redrawLines) {
-    if (!config.interactions.zoom && !config.interactions.pan) return null; // Check if interaction is enabled
+function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, redrawAxesAndGrid, redrawLines, previousTransform) { // Add previousTransform
+    if (!config.interactions.zoom && !config.interactions.pan) return previousTransform; // Return previous if disabled
 
-    const currentZoomTransform = event.transform;
+    const currentTransform = event.transform;
+    let effectiveTransform = currentTransform; // Default to the event's transform
 
-    // Update scales based on the zoom transform
+    // Check the source event type to differentiate drag vs. wheel
+    const sourceEvent = event.sourceEvent;
+    if (sourceEvent) {
+        // If dragging (mousedown/touchstart followed by mousemove/touchmove)
+        if (sourceEvent.type === 'mousemove' || sourceEvent.type === 'touchmove') {
+             if (config.interactions.pan && !config.interactions.zoom) { // Only pan if zoom is disabled but pan is enabled (edge case)
+                 effectiveTransform = d3.zoomIdentity.translate(currentTransform.x, currentTransform.y).scale(previousTransform.k);
+             } else if (config.interactions.pan) { // If pan is generally enabled during drag
+                 // Apply current translation but keep the previous scale
+                 effectiveTransform = d3.zoomIdentity.translate(currentTransform.x, currentTransform.y).scale(previousTransform.k);
+             } else {
+                 // If panning is disabled, don't change anything
+                 effectiveTransform = previousTransform;
+             }
+        }
+        // If wheeling, effectiveTransform remains currentTransform (allows zoom)
+        // unless zoom itself is disabled
+        else if (sourceEvent.type === 'wheel' && !config.interactions.zoom) {
+             effectiveTransform = previousTransform; // Don't zoom if zoom is disabled
+        }
+    }
+
+
+    // Update scales based on the *effective* zoom transform
     // Rescale from the original full domain to avoid drift
     const fullX = getFullXDomain();
     const fullY = getFullYDomain();
 
-    const newXScale = currentZoomTransform.rescaleX(scales.xScale.copy().domain(fullX));
-    const newYScale = currentZoomTransform.rescaleY(scales.yScale.copy().domain(fullY));
+    // Use the effectiveTransform for rescaling
+    const newXScale = effectiveTransform.rescaleX(scales.xScale.copy().domain(fullX));
+    const newYScale = effectiveTransform.rescaleY(scales.yScale.copy().domain(fullY));
 
     // Update the *actual* scales used for drawing
     scales.xScale.domain(newXScale.domain());
@@ -84,7 +109,8 @@ function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, r
     redrawAxesAndGrid(); // Updates axes and grid lines
     redrawLines();       // Updates data lines
 
-    return currentZoomTransform; // Return the new state
+    // Return the *actual* transform from the event, so the state is correct for the *next* event
+    return currentTransform;
 }
 
 
