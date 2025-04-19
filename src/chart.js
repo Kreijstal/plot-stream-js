@@ -314,14 +314,15 @@ class StreamingChart {
         else if (
             sourceEvent &&
             sourceEvent.type === "wheel" &&
-            (sourceEvent.shiftKey ||
-            Math.abs(sourceEvent.deltaX) > Math.abs(sourceEvent.deltaY * 2))
+            sourceEvent.shiftKey // <-- SIMPLIFIED: Only check for shiftKey
+            // REMOVED: || Math.abs(sourceEvent.deltaX) > Math.abs(sourceEvent.deltaY * 2)
         ) {
             isShiftZoom = true;
             sourceEvent.preventDefault();
             const wheelDeltaX = sourceEvent.deltaX || 0;
             const pointerX_svg = sourceEvent.offsetX;
             const pointerX_plot = pointerX_svg - this.#margin.left;
+            // Ensure zoom direction calculation is consistent if needed
             const zoomDirection = wheelDeltaX < 0 ? independentZoomFactor : 1 / independentZoomFactor;
             const xValue_plot = this.#referenceXScale.invert(pointerX_plot);
             const [x0, x1] = this.#referenceXScale.domain();
