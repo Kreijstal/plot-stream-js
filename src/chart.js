@@ -22,6 +22,19 @@ class StreamingChart {
     #isDestroyed = false;
     #currentZoomTransform = null; // Initialized later if zoom is enabled
 
+    // --- NEW State for Follow Button ---
+    #isFollowing = true; // Start in follow mode by default
+    #frozenXDomain = null; // Stores the X domain when follow is turned off
+    #frozenYDomain = null; // Stores the Y domain when follow is turned off
+
+    // --- NEW DOM Element for Follow Button ---
+    #followButtonGroup = null; // D3 selection for the button group
+
+    // --- NEW Method Declarations ---
+    #onFollowButtonClick;
+    #updateFollowButtonAppearance;
+    #updateFollowButtonPosition;
+
     // Dimensions & Margins (Initialized if targetElement exists)
     #width;
     #height;
@@ -76,6 +89,10 @@ class StreamingChart {
             }
             this.#targetElement = targetElement;
             this.#initializeChartDOM();
+            // --- NEW: Create the follow button ---
+            this.#followButtonGroup = createFollowButton(this.#svgElements.svg, this.#onFollowButtonClick.bind(this));
+            this.#updateFollowButtonPosition(); // Set initial position
+            // --- End NEW ---
             this.#setupInteractions();
             this.#setupResizeHandling();
             this.redraw(); // Initial draw
@@ -153,6 +170,16 @@ class StreamingChart {
     #onZoom(event) {
         if (this.#isDestroyed) return;
 
+        // --- NEW: Disable follow mode on user zoom/pan ---
+        if (this.#isFollowing) {
+            this.#isFollowing = false;
+            this.#frozenXDomain = null; // Don't freeze, the zoom defines the view
+            this.#frozenYDomain = null;
+            this.#updateFollowButtonAppearance();
+            console.log("Follow mode turned OFF due to user interaction.");
+        }
+        // --- End NEW ---
+
         // Define redraw functions needed by handleZoom
         const redrawAxesAndGrid = () => {
             updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height);
@@ -166,7 +193,6 @@ class StreamingChart {
         const getFullX = () => getFullXDomain(this.#d3, this.#dataStore);
         const getFullY = () => getFullYDomain(this.#d3, this.#dataStore);
 
-
         this.#currentZoomTransform = handleZoom(
             event,
             this.#d3,
@@ -177,12 +203,14 @@ class StreamingChart {
             redrawAxesAndGrid,
             redrawLines
         );
+        // Store the domains resulting from the zoom
+        this.#frozenXDomain = this.#scales.xScale.domain();
+        this.#frozenYDomain = this.#scales.yScale.domain();
     }
 
     #onResize() {
         if (this.#isDestroyed) return;
 
-        // Define functions needed by handleResize
         const calculateAndUpdateDimensions = () => {
             const dims = calculateDimensions(this.#targetElement, this.#margin);
             this.#width = dims.width;
@@ -196,11 +224,14 @@ class StreamingChart {
         const updateZoomExts = (newWidth, newHeight) => {
              updateZoomExtents(this.#zoomBehavior, newWidth, newHeight);
         };
-        const updateLegendPos = () => {
-            this.#svgElements.legendGroup.attr("transform", getLegendPosition(this.#svgElements.legendGroup.node(), this.#config, this.#margin, this.#width, this.#height));
+        // Update both legend and follow button position
+        const updateOverlayPositions = () => {
+            if (this.#svgElements.legendGroup) {
+                this.#svgElements.legendGroup.attr("transform", getLegendPosition(this.#svgElements.legendGroup.node(), this.#config, this.#margin, this.#width, this.#height));
+            }
+            this.#updateFollowButtonPosition(); // Call our new helper
         };
         const redraw = () => this.redraw();
-
 
         handleResize(
             this.#svgElements,
@@ -209,7 +240,7 @@ class StreamingChart {
             calculateAndUpdateDimensions,
             updateScaleRanges,
             updateZoomExts,
-            updateLegendPos,
+            updateOverlayPositions, // Pass the combined function
             redraw
         );
     }
@@ -217,23 +248,37 @@ class StreamingChart {
     // --- Private Helper Methods ---
 
     #updateScalesAndAxes(animate = false, transition = null) {
-        if (this.#isDestroyed || !this.#targetElement) return; // No DOM elements
+        if (this.#isDestroyed || !this.#targetElement) return;
 
-        // Check if the user is currently zoomed/panned away from the identity state
-        // Use d3.zoomIdentity for comparison
-        const isZoomed = this.#currentZoomTransform &&
-                         this.#currentZoomTransform !== this.#d3.zoomIdentity; // Correctly check against identity
+        const isZoomed = this.#currentZoomTransform && this.#currentZoomTransform !== this.#d3.zoomIdentity;
 
-        // Only recalculate domains based on data/config if the user is NOT actively zoomed/panned.
         if (!isZoomed) {
-            // This function calculates domains based on config rules and full/visible data
-            updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+            // Not actively zoomed by user interaction
+            if (this.#isFollowing) {
+                // --- Follow Mode ON ---
+                // Calculate domains based on data/config (original behavior)
+                updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+                // Clear any frozen state (might be redundant, but safe)
+                this.#frozenXDomain = null;
+                this.#frozenYDomain = null;
+            } else {
+                // --- Follow Mode OFF (and not zoomed) ---
+                // Use the frozen domains if they exist
+                if (this.#frozenXDomain && this.#frozenYDomain) {
+                    this.#scales.xScale.domain(this.#frozenXDomain);
+                    this.#scales.yScale.domain(this.#frozenYDomain);
+                } else {
+                    // Fallback: If somehow frozen domains are null, calculate from data
+                    // This might happen if follow was toggled before data arrived
+                    updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+                }
+            }
         }
-        // ELSE: If zoomed, the scale domains were already set by the zoom handler (#onZoom -> handleZoom)
-        // and should not be overridden here.
+        // ELSE: If user is zoomed (isZoomed is true), the zoom handler already set the scales.
+        // We don't interfere, regardless of the #isFollowing state.
+        // User interaction always takes precedence and implicitly turns Follow off (handled in #onZoom).
 
-        // Always update the visual appearance of the axes and grid lines based on the
-        // *current* state of the scales (whether they were just updated by updateScaleDomains or previously by zoom)
+        // Always update visuals based on the *current* state of scales
         updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height, animate, transition);
         updateGridLines(this.#d3, this.#svgElements, this.#scales, this.#config, this.#width, this.#height);
     }
@@ -295,7 +340,17 @@ class StreamingChart {
     }
 
     setView(view, options = {}) {
-        if (this.#isDestroyed || !this.#targetElement) return; // Cannot set view without DOM
+        if (this.#isDestroyed || !this.#targetElement) return;
+
+        // --- NEW: Disable follow mode ---
+        if (this.#isFollowing) {
+            this.#isFollowing = false;
+            this.#updateFollowButtonAppearance();
+             console.log("Follow mode turned OFF due to setView call.");
+        }
+        this.#frozenXDomain = null; // View is being explicitly set
+        this.#frozenYDomain = null;
+        // --- End NEW ---
 
         const currentXDomain = this.#scales.xScale.domain();
         const currentYDomain = this.#scales.yScale.domain();
@@ -355,6 +410,16 @@ class StreamingChart {
 
     resetView(options = {}) {
         if (this.#isDestroyed || !this.#targetElement) return;
+
+        // --- NEW: Enable follow mode on reset ---
+        if (!this.#isFollowing) {
+             this.#isFollowing = true; // Reset usually implies going back to default (following)
+             this.#updateFollowButtonAppearance();
+             console.log("Follow mode turned ON due to resetView call.");
+        }
+        this.#frozenXDomain = null; // Reset clears any frozen state
+        this.#frozenYDomain = null;
+        // --- End NEW ---
 
         const targetXDomain = getFullXDomain(this.#d3, this.#dataStore);
         const targetYDomain = getFullYDomain(this.#d3, this.#dataStore); // Use full Y extent
@@ -494,10 +559,21 @@ class StreamingChart {
         if (this.#isDestroyed) return;
         this.#isDestroyed = true;
 
+        // --- NEW: Cleanup Follow Button ---
+        if (this.#followButtonGroup) {
+            this.#followButtonGroup.on("click", null); // Remove listener
+            this.#followButtonGroup.remove();
+            this.#followButtonGroup = null;
+        }
+        // --- End NEW ---
+
         // Cleanup DOM elements and observers if they exist
         if (this.#targetElement) {
             cleanupDOM(this.#svgElements.svg, this.#resizeObserver);
              // Remove D3 zoom listeners if zoom behavior exists
+
+        this.#frozenXDomain = null; // Clear state
+        this.#frozenYDomain = null;
             if (this.#zoomBehavior && this.#svgElements.zoomOverlay) {
                 this.#svgElements.zoomOverlay.on(".zoom", null);
             }

@@ -200,6 +200,123 @@ function cleanupDOM(svg, resizeObserver) {
     }
 }
 
+/**
+ * Creates a follow button SVG element.
+ * @param {object} svg - The D3 selection of the SVG element.
+ * @param {function} onClick - The click handler function.
+ * @returns {object} - D3 selection of the button group.
+ */
+function createFollowButton(svg, onClick) {
+    const buttonGroup = svg.append("g")
+        .attr("class", "follow-button")
+        .style("cursor", "pointer")
+        .on("click", onClick);
+
+    // Simple button appearance: rect + text
+    buttonGroup.append("rect")
+        .attr("rx", 3)
+        .attr("ry", 3)
+        .attr("fill", "#f0f0f0")
+        .attr("stroke", "#ccc")
+        .attr("stroke-width", 1);
+
+    buttonGroup.append("text")
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "central")
+        .style("font-size", "10px")
+        .style("user-select", "none")
+        .text("Follow: ON");
+
+    // Initial update of size
+    updateFollowButtonAppearance(buttonGroup, true);
+
+    return buttonGroup;
+}
+
+/**
+ * Updates the follow button's text and size.
+ * @param {object} buttonGroup - D3 selection of the button group.
+ * @param {boolean} isFollowing - Current follow state.
+ */
+function updateFollowButtonAppearance(buttonGroup, isFollowing) {
+    if (!buttonGroup || buttonGroup.empty()) return;
+
+    const textElement = buttonGroup.select("text");
+    const rectElement = buttonGroup.select("rect");
+    const padding = { x: 8, y: 4 };
+
+    textElement.text(isFollowing ? "Follow: ON" : "Follow: OFF");
+
+    // Recalculate size based on new text
+    const textBBox = textElement.node()?.getBBox() || { width: 50, height: 12 };
+    const rectWidth = textBBox.width + 2 * padding.x;
+    const rectHeight = textBBox.height + 2 * padding.y;
+
+    rectElement
+        .attr("width", rectWidth)
+        .attr("height", rectHeight);
+
+    // Center text within the rect
+    textElement
+        .attr("x", rectWidth / 2)
+        .attr("y", rectHeight / 2);
+}
+
+/**
+ * Calculates the position for the follow button.
+ * @param {object} buttonGroup - D3 selection of the button group.
+ * @param {object} margin - The margin configuration object.
+ * @param {number} width - The chart drawing area width.
+ * @param {number} height - The chart drawing area height.
+ * @returns {string} - The transform string for positioning.
+ */
+function getFollowButtonPosition(buttonGroup, margin, width, height) {
+    const buttonBBox = buttonGroup?.node()?.getBBox() || { width: 0, height: 0 };
+    const x = margin.left + width - buttonBBox.width - 10;
+    const y = margin.top + 10;
+
+    return `translate(${x}, ${y})`;
+}
+
+/**
+ * Handles the resize event, updating dimensions, scales, and redrawing.
+ * @param {object} elements - Object containing D3 selections { svg, mainGroup, zoomOverlay }.
+ * @param {string} clipPathId - The unique ID for the clipping path.
+ * @param {object} margin - The margin configuration object.
+ * @param {function} calculateAndUpdateDimensions - Function to recalc width/height.
+ * @param {function} updateScaleRanges - Function to update scale ranges.
+ * @param {function} updateZoomExtents - Function to update zoom behavior extents.
+ * @param {function} updateOverlayPositions - Function to update positions of overlays like legend, buttons.
+ * @param {function} redrawChart - Function to trigger a full redraw.
+ */
+function handleResize(elements, clipPathId, margin, calculateAndUpdateDimensions, updateScaleRanges, updateZoomExtents, updateOverlayPositions, redrawChart) {
+    const { newWidth, newHeight, newContainerWidth, newContainerHeight } = calculateAndUpdateDimensions();
+
+    const { svg, mainGroup, zoomOverlay } = elements;
+
+    svg.attr("width", newWidth + margin.left + margin.right)
+       .attr("height", newHeight + margin.top + margin.bottom);
+    mainGroup.attr("transform", `translate(${margin.left},${margin.top})`);
+    svg.select(`#${clipPathId} rect`)
+        .attr("width", newWidth)
+        .attr("height", newHeight);
+    zoomOverlay
+        .attr("width", newWidth)
+        .attr("height", newHeight);
+
+    mainGroup.select(".x-axis-label")
+        .attr("x", newWidth / 2)
+        .attr("y", newHeight + margin.bottom - 5);
+    mainGroup.select(".y-axis-label")
+        .attr("x", -newHeight / 2)
+        .attr("y", -margin.left + 15);
+
+    updateScaleRanges(newWidth, newHeight);
+    updateZoomExtents(newWidth, newHeight);
+    updateOverlayPositions();
+    redrawChart();
+}
+
 
 module.exports = {
     calculateDimensions,
