@@ -221,6 +221,33 @@ class StreamingChart {
             dragStart = null;
             startXDomain = null;
             startYDomain = null;
+
+            // --- NEW: Synchronize D3 zoom state after drag ---
+            if (this.#zoomBehavior && this.#svgElements.zoomOverlay) {
+                // Calculate the transform that corresponds to the current scale domains
+                const fullX = getFullXDomain(this.#d3, this.#dataStore);
+                const fullY = getFullYDomain(this.#d3, this.#dataStore);
+
+                // Create temporary scales representing the full data range mapped to the pixel range
+                const tempXScale = this.#d3.scaleLinear().domain(fullX).range(this.#scales.xScale.range());
+                const tempYScale = this.#d3.scaleLinear().domain(fullY).range(this.#scales.yScale.range());
+
+                // Calculate the transform needed to make the temp scales match the *current* domains
+                // Use copies of the temp scales to avoid modifying them
+                const newTransform = this.#d3.zoomIdentity
+                    .rescaleX(tempXScale.copy().domain(this.#scales.xScale.domain()))
+                    .rescaleY(tempYScale.copy().domain(this.#scales.yScale.domain()));
+
+                // Store the new transform state
+                this.#currentZoomTransform = newTransform;
+
+                // Silently update the D3 zoom behavior's internal state
+                // This prevents the zoom event handler from firing unnecessarily
+                this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+
+                console.log("Synchronized D3 zoom state after pan.");
+            }
+            // --- End NEW ---
         };
 
         // Add drag handlers to the zoom overlay
