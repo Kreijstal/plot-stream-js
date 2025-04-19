@@ -61,56 +61,84 @@ function updateZoomExtents(zoomBehavior, width, height) {
  * @param {function} getFullYDomain - Function to get the full Y data extent.
  * @param {function} redrawAxesAndGrid - Function to redraw axes and grid.
  * @param {function} redrawLines - Function to redraw data lines.
+ * @param {object} previousTransform - The previous D3 zoom transform state.
+ * @param {number} width - The width of the chart drawing area.
+ * @param {number} height - The height of the chart drawing area.
  * @returns {object} - The new zoom transform state.
  */
-function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, redrawAxesAndGrid, redrawLines, previousTransform) { // Add previousTransform
-    if (!config.interactions.zoom && !config.interactions.pan) return previousTransform; // Return previous if disabled
+function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, redrawAxesAndGrid, redrawLines, previousTransform, width, height) { // Add width, height
+    if (!previousTransform) previousTransform = d3.zoomIdentity; // Ensure previousTransform exists
+
+    if (!config.interactions.zoom && !config.interactions.pan) return previousTransform;
 
     const currentTransform = event.transform;
-    let effectiveTransform = currentTransform; // Default to the event's transform
 
-    // Check the source event type to differentiate drag vs. wheel
+    // Check the source event type
     const sourceEvent = event.sourceEvent;
-    if (sourceEvent) {
-        // If dragging (mousedown/touchstart followed by mousemove/touchmove)
-        if (sourceEvent.type === 'mousemove' || sourceEvent.type === 'touchmove') {
-             if (config.interactions.pan && !config.interactions.zoom) { // Only pan if zoom is disabled but pan is enabled (edge case)
-                 effectiveTransform = d3.zoomIdentity.translate(currentTransform.x, currentTransform.y).scale(previousTransform.k);
-             } else if (config.interactions.pan) { // If pan is generally enabled during drag
-                 // Apply current translation but keep the previous scale
-                 effectiveTransform = d3.zoomIdentity.translate(currentTransform.x, currentTransform.y).scale(previousTransform.k);
-             } else {
-                 // If panning is disabled, don't change anything
-                 effectiveTransform = previousTransform;
-             }
+    if (sourceEvent && (sourceEvent.type === 'mousemove' || sourceEvent.type === 'touchmove')) {
+        // --- Dragging --- (Pan Only)
+        if (config.interactions.pan) {
+            // Construct a transform that ONLY includes the translation part of the current event,
+            // but keeps the scale factor from the PREVIOUS state.
+            const panOnlyTransform = d3.zoomIdentity
+                .translate(currentTransform.x, currentTransform.y) // Apply current translation
+                .scale(previousTransform.k); // Keep previous scale
+
+            // Rescale using this pan-only transform
+            const fullX = getFullXDomain();
+            const fullY = getFullYDomain();
+            // Use the panOnlyTransform for rescaling
+            const newXScale = panOnlyTransform.rescaleX(scales.xScale.copy().domain(fullX));
+            const newYScale = panOnlyTransform.rescaleY(scales.yScale.copy().domain(fullY));
+
+            // Update the actual scales used for drawing
+            scales.xScale.domain(newXScale.domain());
+            scales.yScale.domain(newYScale.domain());
+
+            // Redraw elements based on the updated scales
+            redrawAxesAndGrid();
+            redrawLines();
+
+            // Return the panOnlyTransform to update d3's state correctly for the next event
+            return panOnlyTransform;
+        } else {
+            // Panning disabled, return previous state without changes
+            return previousTransform;
         }
-        // If wheeling, effectiveTransform remains currentTransform (allows zoom)
-        // unless zoom itself is disabled
-        else if (sourceEvent.type === 'wheel' && !config.interactions.zoom) {
-             effectiveTransform = previousTransform; // Don't zoom if zoom is disabled
+
+    } else if (sourceEvent && sourceEvent.type === 'wheel') {
+        // --- Scrolling --- (Zoom and Pan)
+        if (config.interactions.zoom) {
+            // Use standard rescale for zooming
+            const fullX = getFullXDomain();
+            const fullY = getFullYDomain();
+            const newXScale = currentTransform.rescaleX(scales.xScale.copy().domain(fullX));
+            const newYScale = currentTransform.rescaleY(scales.yScale.copy().domain(fullY));
+
+            scales.xScale.domain(newXScale.domain());
+            scales.yScale.domain(newYScale.domain());
+
+            redrawAxesAndGrid();
+            redrawLines();
+
+            return currentTransform; // Return the full transform including scale change
+        } else {
+            // Zooming disabled, return previous state
+            return previousTransform;
         }
+    } else {
+         // Other event types or no source event, likely programmatic transform or initial state
+         // Apply the transform as is if needed (e.g., for setView)
+         const fullX = getFullXDomain();
+         const fullY = getFullYDomain();
+         const newXScale = currentTransform.rescaleX(scales.xScale.copy().domain(fullX));
+         const newYScale = currentTransform.rescaleY(scales.yScale.copy().domain(fullY));
+         scales.xScale.domain(newXScale.domain());
+         scales.yScale.domain(newYScale.domain());
+         redrawAxesAndGrid();
+         redrawLines();
+         return currentTransform;
     }
-
-
-    // Update scales based on the *effective* zoom transform
-    // Rescale from the original full domain to avoid drift
-    const fullX = getFullXDomain();
-    const fullY = getFullYDomain();
-
-    // Use the effectiveTransform for rescaling
-    const newXScale = effectiveTransform.rescaleX(scales.xScale.copy().domain(fullX));
-    const newYScale = effectiveTransform.rescaleY(scales.yScale.copy().domain(fullY));
-
-    // Update the *actual* scales used for drawing
-    scales.xScale.domain(newXScale.domain());
-    scales.yScale.domain(newYScale.domain());
-
-    // Redraw elements based on the updated scales
-    redrawAxesAndGrid(); // Updates axes and grid lines
-    redrawLines();       // Updates data lines
-
-    // Return the *actual* transform from the event, so the state is correct for the *next* event
-    return currentTransform;
 }
 
 

@@ -233,7 +233,8 @@ class StreamingChart {
             event, this.#d3, this.#config, this.#scales,
             getFullX, getFullY,
             redrawAxesAndGrid, redrawLines,
-            this.#currentZoomTransform // Pass the previous transform state
+            this.#currentZoomTransform, // Pass the previous transform state
+            this.#width, this.#height // Pass width and height
         );
         // Store the domains resulting from the zoom/pan
         // Only store if follow mode is off, otherwise follow mode dictates domain
