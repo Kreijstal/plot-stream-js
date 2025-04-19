@@ -201,9 +201,7 @@ class StreamingChart {
 
             // Calculate domain shift
             const xShift = (dx * xDomainWidth) / (xRange[1] - xRange[0]);
-            const yShift = (dy * yDomainHeight) / (yRange[0] - yRange[1]); // Note: y range is inverted
-
-            // Apply the shift to both axes
+            const yShift = (dy * yDomainHeight) / (yRange[1] - yRange[0]); 
             this.#scales.xScale.domain([startXDomain[0] - xShift, startXDomain[1] - xShift]);
             this.#scales.yScale.domain([startYDomain[0] - yShift, startYDomain[1] - yShift]);
 
