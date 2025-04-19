@@ -219,7 +219,8 @@ class StreamingChart {
     #updateScalesAndAxes(animate = false, transition = null) {
         if (this.#isDestroyed || !this.#targetElement) return; // No DOM elements
 
-        updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+        const isZoomed = this.#currentZoomTransform && this.#currentZoomTransform !== this.#d3.zoomIdentity;
+        updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore, isZoomed);
         updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height, animate, transition);
         updateGridLines(this.#d3, this.#svgElements, this.#scales, this.#config, this.#width, this.#height);
     }

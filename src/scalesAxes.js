@@ -90,9 +90,10 @@ function getFullYDomain(d3, dataStore) {
  * @param {object} config - The chart configuration.
  * @param {object} xScale - The current D3 xScale instance.
  * @param {object} dataStore - The main data store.
+ * @param {boolean} [isZoomed=false] - Whether the chart is currently zoomed/panned.
  * @returns {Array<number>} - The calculated [minX, maxX] domain.
  */
-function calculateXDomain(d3, config, xScale, dataStore) {
+function calculateXDomain(d3, config, xScale, dataStore, isZoomed = false) {
     const configRange = config.xAxis.range;
     const currentXDomain = xScale.domain(); // Reflects current zoom/pan
 
@@ -105,38 +106,37 @@ function calculateXDomain(d3, config, xScale, dataStore) {
         return [configRange.min, configRange.max];
     }
 
-    // Get full data range
-    const fullDataX = getFullXDomain(d3, dataStore);
-
-    // Priority 2: Auto-scaling when max is null (follow data)
-    if (configRange && configRange.max === null) {
-        let [minX, maxX] = fullDataX;
-        minX = configRange && typeof configRange.min === "number" ? configRange.min : minX;
+    // Priority 2: User is actively zoomed/panned
+    if (isZoomed) {
+        // Preserve the current domain set by the zoom handler
+        // Clamp by fixed config limits if they exist
+        let [minX, maxX] = currentXDomain;
+        minX = configRange && typeof configRange.min === 'number' ? Math.max(minX, configRange.min) : minX;
+        maxX = configRange && typeof configRange.max === 'number' ? Math.min(maxX, configRange.max) : maxX;
+        // Ensure min < max after clamping
+        if (minX >= maxX) {
+             maxX = minX + 1; // Or some other sensible default range
+        }
         return [minX, maxX];
     }
 
-    // Priority 3: Current zoomed/panned view (if different from full data extent)
-    if (
-        currentXDomain[0] !== fullDataX[0] ||
-        currentXDomain[1] !== fullDataX[1]
-    ) {
-        // If the user has interacted via zoom/pan, keep their current view
-        // unless overridden by a fixed config range (handled above).
-        // Apply individual config limits if they exist, constraining the zoomed view.
-         let [minX, maxX] = currentXDomain;
-         minX = configRange && typeof configRange.min === 'number' ? Math.max(minX, configRange.min) : minX;
-         maxX = configRange && typeof configRange.max === 'number' ? Math.min(maxX, configRange.max) : maxX;
-         return [minX, maxX];
-    }
-
-    // Priority 4: Default auto-scale based on full data, respecting individual config limits
+    // Priority 3: Not zoomed, auto-scale (covers max: null and default auto)
+    const fullDataX = getFullXDomain(d3, dataStore);
     let [minX, maxX] = fullDataX;
     minX = configRange && typeof configRange.min === "number" ? configRange.min : minX;
-    maxX = configRange && typeof configRange.max === "number" ? configRange.max : maxX;
+    maxX = configRange && typeof configRange.max === "number" ? configRange.max : maxX; // Handles fixed max if provided
 
     // Handle case with no data or single point (already handled in getFullXDomain)
     if (minX === maxX) {
+        // Respect fixed bounds if they caused min===max
+         if (configRange && typeof configRange.min === "number" && typeof configRange.max === "number") {
+            return [configRange.min, configRange.max];
+         }
         return [minX - 1, maxX + 1];
+    }
+     // Ensure min < max after potential clamping
+     if (minX >= maxX) {
+        maxX = minX + 1;
     }
     return [minX, maxX];
 }
@@ -214,9 +214,10 @@ function calculateYDomain(d3, config, dataStore, currentXDomain) {
  * @param {object} config - The chart configuration.
  * @param {object} scales - Object containing xScale and yScale.
  * @param {object} dataStore - The main data store.
+ * @param {boolean} [isZoomed=false] - Whether the chart is currently zoomed/panned.
  */
-function updateScaleDomains(d3, config, scales, dataStore) {
-    const xDomain = calculateXDomain(d3, config, scales.xScale, dataStore);
+function updateScaleDomains(d3, config, scales, dataStore, isZoomed = false) {
+    const xDomain = calculateXDomain(d3, config, scales.xScale, dataStore, isZoomed);
     const yDomain = calculateYDomain(d3, config, dataStore, xDomain); // Y domain depends on visible X
 
     scales.xScale.domain(xDomain);
