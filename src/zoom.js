@@ -82,7 +82,7 @@ function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, r
             // but keeps the scale factor from the PREVIOUS state.
             const panOnlyTransform = d3.zoomIdentity
                 .translate(currentTransform.x, currentTransform.y) // Apply current translation
-                .scale(previousTransform.k); // Keep previous scale
+               // .scale(previousTransform.k); // Keep previous scale
 
             // Rescale using this pan-only transform
             const fullX = getFullXDomain();
