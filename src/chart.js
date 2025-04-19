@@ -236,7 +236,9 @@ class StreamingChart {
                 // Use transition for smoothness if desired, otherwise apply directly
                 this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
                 this.#isProgrammaticZoom = false;
-                console.log("Reset D3 zoom state as follow mode turned ON.");
+                if (this.#config.debug) {
+                    console.log("Reset D3 zoom state as follow mode turned ON.");
+                }
             }
 
             // Recalculate domains based on data/config and redraw
@@ -246,7 +248,9 @@ class StreamingChart {
         }
         // Use imported function
         updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
-        console.log(`Follow mode set to: ${this.#isFollowing}`);
+        if (this.#config.debug) {
+            console.log(`Follow mode set to: ${this.#isFollowing}`);
+        }
     }
 
     // --- Event Handlers ---
@@ -694,7 +698,9 @@ class StreamingChart {
         if (this.#isFollowing) {
             this.#isFollowing = false;
             updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
-            console.log("Follow mode turned OFF due to setView call.");
+            if (this.#config.debug) {
+                console.log("Follow mode turned OFF due to setView call.");
+            }
         }
         this.#isZoomingOrPanning = false; // Ensure interaction flag is off
 
@@ -737,7 +743,9 @@ class StreamingChart {
         if (!this.#isFollowing) {
              this.#isFollowing = true;
              updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
-             console.log("Follow mode turned ON due to resetView call.");
+             if (this.#config.debug) {
+                 console.log("Follow mode turned ON due to resetView call.");
+             }
         }
         this.#frozenXDomain = null; // Reset clears any frozen state
         this.#frozenYDomain = null;
@@ -945,7 +953,9 @@ class StreamingChart {
         this.#referenceXScale = null;
         this.#referenceYScale = null;
 
-        console.log("StreamingChart destroyed.");
+        if (this.#config.debug) {
+            console.log("StreamingChart destroyed.");
+        }
     }
 }
 
