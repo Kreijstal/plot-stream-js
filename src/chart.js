@@ -275,23 +275,7 @@ class StreamingChart {
 
         // Update view/scales only if DOM exists
         if (this.#targetElement && needsScaleUpdate) {
-            const follow = this.#config.xAxis.range?.max === null; // Follow if max is auto
-
-            if (follow && latestX > -Infinity) {
-                const currentXDomain = this.#scales.xScale.domain();
-                const currentXSpan = currentXDomain[1] - currentXDomain[0];
-
-                // If the latest point is outside the current view or close to the edge, shift the view
-                if (latestX > currentXDomain[1] - currentXSpan * 0.1) { // e.g., shift if data enters last 10%
-                    this.setView(
-                        { xMin: latestX - currentXSpan, xMax: latestX },
-                        { transition: 50 } // Smooth scroll
-                    );
-                    return; // setView handles the redraw
-                }
-            }
-
-            // Otherwise just update scales/lines in place
+            // Always update scales/lines based on full data extent
             this.#updateScalesAndAxes(); // Recalculate domains based on new data
             this.#updateChartLines();
         }
