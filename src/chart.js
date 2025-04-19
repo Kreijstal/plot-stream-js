@@ -34,7 +34,9 @@ class StreamingChart {
     #dataStore = {}; // { seriesId: [{x, y}, ...] }
     #seriesConfigs = {}; // Merged default/user configs per series
     #isDestroyed = false;
-    #currentZoomTransform = null; // Initialized later if zoom is enabled
+    #currentZoomTransform = null; // Stores the current d3.zoomTransform object
+    #isZoomingOrPanning = false; // Flag to indicate an active zoom/pan gesture
+    #initialScalesOnZoomStart = null; // Store scales at the start of a gesture
 
     // --- NEW State for Follow Button ---
     #isFollowing = true; // Start in follow mode by default
@@ -103,7 +105,7 @@ class StreamingChart {
             // Use imported function
             updateFollowButtonPosition(this.#followButtonGroup, this.#margin, this.#width, this.#height);
             // --- End NEW ---
-            this.#setupInteractions();
+            this.#setupInteractions(); // Setup unified zoom/pan
             this.#setupResizeHandling();
             this.redraw(); // Initial draw
         } else {
@@ -144,134 +146,42 @@ class StreamingChart {
     }
 
     #setupInteractions() {
-        if (!this.#targetElement) return;
+        if (!this.#targetElement || !this.#svgElements.zoomOverlay) return;
 
-        if (this.#config.interactions.zoom) {
-            this.#zoomBehavior = initializeZoom(this.#d3, this.#width, this.#height, this.#onZoom.bind(this));
-            applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, this.#isZoomEnabled());
-        }
+        const zoomEnabled = this.#config.interactions.zoom;
+        const panEnabled = this.#config.interactions.pan;
 
-        // Set up drag behavior for panning
-        if (this.#config.interactions.pan) {
-            this.#setupDragBehavior();
+        if (zoomEnabled || panEnabled) {
+            if (!this.#zoomBehavior) {
+                this.#zoomBehavior = initializeZoom(
+                    this.#d3,
+                    this.#width,
+                    this.#height,
+                    this.#onZoomStart.bind(this), // Pass start handler
+                    this.#onZoom.bind(this),      // Pass zoom handler
+                    this.#onZoomEnd.bind(this)    // Pass end handler
+                );
+            }
+            // Apply the behavior (enables zoom/pan based on config)
+            applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, zoomEnabled, panEnabled);
+
+            // Apply the current transform state immediately in case it's not identity
+            this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+
+        } else {
+            // Disable zoom/pan if both are false
+            if (this.#zoomBehavior) {
+                this.#svgElements.zoomOverlay.on(".zoom", null); // Remove listeners
+                this.#svgElements.zoomOverlay.style("cursor", "default");
+            }
         }
     }
 
-    #setupDragBehavior() {
-        // Store initial positions and domains for the drag operation
-        let dragStart = null;
-        let startXDomain = null;
-        let startYDomain = null;
+    // --- REMOVED #setupDragBehavior ---
 
-        const onDragStart = (event) => {
-            if (this.#isDestroyed) return;
-            event.preventDefault();
-            
-            dragStart = { x: event.x, y: event.y };
-            startXDomain = [...this.#scales.xScale.domain()];
-            startYDomain = [...this.#scales.yScale.domain()];
-
-            // Disable follow mode on drag start
-            if (this.#isFollowing) {
-                this.#isFollowing = false;
-                updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
-                console.log("Follow mode turned OFF due to user pan.");
-            }
-        };
-
-        const onDrag = (event) => {
-            if (this.#isDestroyed || !dragStart) return;
-            event.preventDefault();
-
-            // Calculate pixel movement
-            const dx = event.x - dragStart.x;
-            const dy = event.y - dragStart.y;
-
-            // Convert pixel movement to domain values
-            const xRange = this.#scales.xScale.range();
-            const yRange = this.#scales.yScale.range();
-            const xDomainWidth = startXDomain[1] - startXDomain[0];
-            const yDomainHeight = startYDomain[1] - startYDomain[0];
-
-            // Calculate domain shift
-            const xShift = (dx * xDomainWidth) / (xRange[1] - xRange[0]);
-            const yShift = (dy * yDomainHeight) / (yRange[1] - yRange[0]); 
-            this.#scales.xScale.domain([startXDomain[0] - xShift, startXDomain[1] - xShift]);
-            this.#scales.yScale.domain([startYDomain[0] - yShift, startYDomain[1] - yShift]);
-
-            // Store the current domains if follow mode is off
-            if (!this.#isFollowing) {
-                this.#frozenXDomain = this.#scales.xScale.domain();
-                this.#frozenYDomain = this.#scales.yScale.domain();
-            }
-
-            // Redraw
-            this.#updateScalesAndAxes();
-            this.#updateChartLines();
-        };
-
-        const onDragEnd = (event) => {
-            if (this.#isDestroyed) return;
-            dragStart = null;
-            startXDomain = null;
-            startYDomain = null;
-
-            // --- NEW: Synchronize D3 zoom state after drag ---
-            if (this.#zoomBehavior && this.#svgElements.zoomOverlay) {
-                // Calculate the transform that corresponds to the current scale domains
-                const fullX = getFullXDomain(this.#d3, this.#dataStore);
-                const fullY = getFullYDomain(this.#d3, this.#dataStore);
-
-                // Create temporary scales representing the full data range mapped to the pixel range
-                const tempXScale = this.#d3.scaleLinear().domain(fullX).range(this.#scales.xScale.range());
-                const tempYScale = this.#d3.scaleLinear().domain(fullY).range(this.#scales.yScale.range());
-
-                // Calculate the transform needed to make the temp scales match the *current* domains
-                // Use copies of the temp scales to avoid modifying them
-                const newTransform = this.#d3.zoomIdentity
-                    .rescaleX(tempXScale.copy().domain(this.#scales.xScale.domain()))
-                    .rescaleY(tempYScale.copy().domain(this.#scales.yScale.domain()));
-
-                // Store the new transform state
-                this.#currentZoomTransform = newTransform;
-
-                // Silently update the D3 zoom behavior's internal state
-                // This prevents the zoom event handler from firing unnecessarily
-                this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
-
-                console.log("Synchronized D3 zoom state after pan.");
-            }
-            // --- End NEW ---
-        };
-
-        // Add drag handlers to the zoom overlay
-        this.#svgElements.zoomOverlay
-            .style("cursor", "grab")
-            .on("mousedown.drag", (event) => {
-                this.#svgElements.zoomOverlay.style("cursor", "grabbing");
-                onDragStart(event);
-            })
-            .on("mousemove.drag", onDrag)
-            .on("mouseup.drag mouseleave.drag", (event) => {
-                this.#svgElements.zoomOverlay.style("cursor", "grab");
-                onDragEnd(event);
-            })
-            // Touch events
-            .on("touchstart.drag", (event) => {
-                event.preventDefault();
-                const touch = event.touches[0];
-                onDragStart({ x: touch.clientX, y: touch.clientY, preventDefault: () => {} });
-            })
-            .on("touchmove.drag", (event) => {
-                event.preventDefault();
-                const touch = event.touches[0];
-                onDrag({ x: touch.clientX, y: touch.clientY, preventDefault: () => {} });
-            })
-            .on("touchend.drag", onDragEnd);
-    }
-
-    #isZoomEnabled() {
-        return this.#config.interactions.zoom; // Only check zoom, as pan is handled separately
+    #isInteractionEnabled() {
+        // Helper to check if any interaction requires the zoom behavior
+        return this.#config.interactions.zoom || this.#config.interactions.pan;
     }
 
     #setupResizeHandling() {
@@ -296,21 +206,19 @@ class StreamingChart {
             // --- Turning Follow ON ---
             this.#frozenXDomain = null;
             this.#frozenYDomain = null;
+            this.#isZoomingOrPanning = false; // Ensure flag is reset
 
-            // Recalculate domains based on data/config
-            this.#updateScalesAndAxes();
-
-            // --- NEW: Reset D3 zoom state to identity ---
+            // Reset D3 zoom state to identity *and* apply it
             if (this.#zoomBehavior && this.#svgElements.zoomOverlay) {
                 this.#currentZoomTransform = this.#d3.zoomIdentity;
-                // Silently update the zoom behavior's internal state
+                // Use transition for smoothness if desired, otherwise apply directly
                 this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
                 console.log("Reset D3 zoom state as follow mode turned ON.");
             }
-            // --- End NEW ---
 
-            // Redraw lines with the new scales
-            this.#updateChartLines();
+            // Recalculate domains based on data/config and redraw
+            this.redraw(); // Redraw will use the new follow state
+
         }
         // Use imported function
         updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
@@ -319,25 +227,49 @@ class StreamingChart {
 
     // --- Event Handlers ---
 
-    #onZoom(event) {
-        if (this.#isDestroyed) return;
+    #onZoomStart(event) {
+        if (this.#isDestroyed || !event.sourceEvent) return; // Ignore programmatic zoom starts
 
-        // Only disable follow mode if the zoom event was triggered by a direct user interaction
-        if (this.#isFollowing && event.sourceEvent) {
+        // Store the state of the scales *before* the zoom/pan starts
+        this.#initialScalesOnZoomStart = {
+            xScale: this.#scales.xScale.copy(),
+            yScale: this.#scales.yScale.copy()
+        };
+        this.#isZoomingOrPanning = true;
+
+        // Disable follow mode immediately on user interaction
+        if (this.#isFollowing) {
             this.#isFollowing = false;
-            this.#frozenXDomain = null; // Don't freeze, the zoom defines the view
+            this.#frozenXDomain = null; // Will be set by the zoom/pan itself
             this.#frozenYDomain = null;
-            // Use imported function
             updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
             console.log("Follow mode turned OFF due to user interaction.");
         }
 
-        // Calculate full extent scales for zooming
-        const fullXDomain = getFullXDomain(this.#d3, this.#dataStore);
-        const fullYDomain = getFullYDomain(this.#d3, this.#dataStore);
-        const fullXScale = this.#d3.scaleLinear().domain(fullXDomain).range(this.#scales.xScale.range());
-        const fullYScale = this.#d3.scaleLinear().domain(fullYDomain).range(this.#scales.yScale.range());
+        if (this.#config.interactions.pan) {
+            this.#svgElements.zoomOverlay.style("cursor", "grabbing");
+        }
+    }
 
+
+    #onZoom(event) {
+        if (this.#isDestroyed || !this.#isZoomingOrPanning) return; // Only handle active gestures
+
+        // Store the latest transform
+        this.#currentZoomTransform = event.transform;
+
+        // Check if zoom/pan is allowed by config before redrawing
+        const zoomAllowed = this.#config.interactions.zoom && event.sourceEvent?.type === 'wheel';
+        const panAllowed = this.#config.interactions.pan && event.sourceEvent?.type !== 'wheel'; // Crude check, D3 handles this better internally
+
+        if (!zoomAllowed && !panAllowed) {
+             // If neither is allowed, potentially revert? Or just do nothing.
+             // For now, handleZoom will still update scales based on transform,
+             // but maybe we should prevent the call if interaction is disabled.
+             // Let's assume applyZoomBehavior handles disabling correctly for now.
+        }
+
+        // Prepare redraw functions
         const redrawAxesAndGrid = () => {
             updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height);
             updateGridLines(this.#d3, this.#svgElements, this.#scales, this.#config, this.#width, this.#height);
@@ -346,19 +278,42 @@ class StreamingChart {
             updateLines(this.#svgElements.linesGroup, this.#dataStore, this.#seriesConfigs, this.#lineGenerator);
         };
 
-        this.#currentZoomTransform = handleZoom(
-            event, this.#d3, this.#config, this.#scales,
-            fullXScale, fullYScale, // Pass full extent scales
-            redrawAxesAndGrid, redrawLines,
-            this.#currentZoomTransform,
-            this.#width, this.#height
+        // Call the zoom handler from zoom.js
+        // It will modify this.#scales directly based on the transform and initial scales
+        handleZoom(
+            event,
+            this.#scales, // Pass the live scales object
+            this.#initialScalesOnZoomStart, // Pass the scales from the start of the gesture
+            redrawAxesAndGrid,
+            redrawLines
         );
-        // Store the domains resulting from the zoom/pan
+
+        // Update frozen domains *during* the zoom/pan when follow is off
         if (!this.#isFollowing) {
             this.#frozenXDomain = this.#scales.xScale.domain();
             this.#frozenYDomain = this.#scales.yScale.domain();
         }
     }
+
+     #onZoomEnd(event) {
+        if (this.#isDestroyed) return;
+
+        this.#isZoomingOrPanning = false;
+        this.#initialScalesOnZoomStart = null; // Clear the initial state
+
+        if (this.#config.interactions.pan) {
+            this.#svgElements.zoomOverlay.style("cursor", "grab");
+        }
+
+        // Final update of frozen domains after the gesture ends
+        if (!this.#isFollowing) {
+            this.#frozenXDomain = this.#scales.xScale.domain();
+            this.#frozenYDomain = this.#scales.yScale.domain();
+            console.log("Finalized frozen domains after zoom/pan:", this.#frozenXDomain, this.#frozenYDomain);
+        }
+         // No need to synchronize transform here, #currentZoomTransform is updated in #onZoom
+    }
+
 
     #onResize() {
         if (this.#isDestroyed) return;
@@ -375,6 +330,10 @@ class StreamingChart {
         };
         const updateZoomExts = (newWidth, newHeight) => {
             updateZoomExtents(this.#zoomBehavior, newWidth, newHeight);
+            // Re-apply the current transform to potentially adjust for new extent/center
+            if (this.#zoomBehavior && this.#svgElements.zoomOverlay && this.#isInteractionEnabled()) {
+                 this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+            }
         };
         // Update both legend and follow button position
         const updateOverlayPositions = () => {
@@ -403,27 +362,52 @@ class StreamingChart {
     #updateScalesAndAxes(animate = false, transition = null) {
         if (this.#isDestroyed || !this.#targetElement) return;
 
-        const isZoomed = this.#currentZoomTransform && this.#currentZoomTransform !== this.#d3.zoomIdentity;
+        // If a zoom/pan gesture is active, the scales are already being handled by #onZoom
+        if (this.#isZoomingOrPanning) {
+             // We still need to update axes and grid based on the scales modified by handleZoom
+             updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height, animate, transition);
+             updateGridLines(this.#d3, this.#svgElements, this.#scales, this.#config, this.#width, this.#height);
+             return; // Don't override scales set by zoom/pan
+        }
 
-        if (!isZoomed) {
-            // Not actively zoomed by user interaction
-            if (this.#isFollowing) {
-                // --- Follow Mode ON ---
-                updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
-                this.#frozenXDomain = null;
-                this.#frozenYDomain = null;
+        // --- Logic for when NOT actively zooming/panning ---
+        if (this.#isFollowing) {
+            // --- Follow Mode ON ---
+            // Calculate domains based on data and config
+            updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+            // Ensure zoom transform is identity when following
+            if (this.#currentZoomTransform !== this.#d3.zoomIdentity) {
+                 this.#currentZoomTransform = this.#d3.zoomIdentity;
+                 if (this.#zoomBehavior && this.#svgElements.zoomOverlay && this.#isInteractionEnabled()) {
+                     // Silently update D3's internal state if needed
+                     this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+                 }
+            }
+            this.#frozenXDomain = null;
+            this.#frozenYDomain = null;
+        } else {
+            // --- Follow Mode OFF (and not zooming/panning) ---
+            if (this.#frozenXDomain && this.#frozenYDomain) {
+                // Apply the previously frozen domains
+                this.#scales.xScale.domain(this.#frozenXDomain);
+                this.#scales.yScale.domain(this.#frozenYDomain);
+                // The #currentZoomTransform should already reflect this state
             } else {
-                // --- Follow Mode OFF (and not zoomed) ---
-                if (this.#frozenXDomain && this.#frozenYDomain) {
-                    this.#scales.xScale.domain(this.#frozenXDomain);
-                    this.#scales.yScale.domain(this.#frozenYDomain);
-                } else {
-                    updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
-                }
+                // No frozen state? This might happen if follow was just turned off
+                // without interaction. Calculate based on data as a fallback.
+                updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+                // Freeze this state now
+                this.#frozenXDomain = this.#scales.xScale.domain();
+                this.#frozenYDomain = this.#scales.yScale.domain();
+                 // Also need to calculate the corresponding zoom transform here
+                 this.#currentZoomTransform = this.#calculateTransformForDomains(this.#frozenXDomain, this.#frozenYDomain);
+                 if (this.#zoomBehavior && this.#svgElements.zoomOverlay && this.#isInteractionEnabled()) {
+                     this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+                 }
             }
         }
-        // ELSE: If user is zoomed, the zoom handler already set the scales.
 
+        // Update axes and grid based on the determined scales
         updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height, animate, transition);
         updateGridLines(this.#d3, this.#svgElements, this.#scales, this.#config, this.#width, this.#height);
     }
@@ -442,6 +426,49 @@ class StreamingChart {
         // Callback for ensureSeriesExists
         this.#updateChartLegend();
     }
+
+     // --- NEW Helper to calculate transform for given domains ---
+     #calculateTransformForDomains(targetXDomain, targetYDomain) {
+        if (!this.#targetElement || !targetXDomain || !targetYDomain) return this.#d3.zoomIdentity;
+
+        // Get the full data extent to establish a base reference for the transform calculation
+        // Although zoom/pan is relative to the view when follow=off,
+        // we need a consistent base to calculate the transform *object* itself.
+        const fullX = getFullXDomain(this.#d3, this.#dataStore, this.#config.xAxis.min, this.#config.xAxis.max);
+        const fullY = getFullYDomain(this.#d3, this.#dataStore, this.#config.yAxis.min, this.#config.yAxis.max);
+
+        // Create temporary scales representing the full data range mapped to the pixel range
+        const tempFullXScale = this.#d3.scaleLinear().domain(fullX).range(this.#scales.xScale.range());
+        const tempFullYScale = this.#d3.scaleLinear().domain(fullY).range(this.#scales.yScale.range());
+
+        // Calculate the transform needed to make these temp scales show the target domains
+        // k = base_range / target_range
+        const kx = (tempFullXScale.range()[1] - tempFullXScale.range()[0]) / (tempFullXScale(targetXDomain[1]) - tempFullXScale(targetXDomain[0]));
+        const ky = (tempFullYScale.range()[0] - tempFullYScale.range()[1]) / (tempFullYScale(targetYDomain[0]) - tempFullYScale(targetYDomain[1])); // Note range order for y
+
+        // Use the geometric mean for uniform scaling (or choose one axis, e.g., kx)
+        const k = Math.sqrt(kx * ky); // Or simply k = kx;
+
+        // tx = -target_domain_start_in_pixels * k
+        const tx = -tempFullXScale(targetXDomain[0]) * k;
+        // ty = -target_domain_start_in_pixels * k
+        const ty = -tempFullYScale(targetYDomain[1]) * k; // Use max domain value for y-pixel start
+
+        // Clamp k within scaleExtent? D3 zoom usually handles this.
+        const scaleExtent = this.#zoomBehavior?.scaleExtent() || [0.1, 100];
+        const clampedK = Math.max(scaleExtent[0], Math.min(scaleExtent[1], k));
+
+        // Adjust tx/ty if k was clamped? This gets complex. Let D3 handle clamping via .transform.
+        // For simplicity, we calculate the ideal transform first.
+
+        if (!isFinite(k) || !isFinite(tx) || !isFinite(ty)) {
+             console.warn("Calculated invalid transform, returning identity.", { k, tx, ty, targetXDomain, targetYDomain, fullX, fullY });
+             return this.#d3.zoomIdentity;
+        }
+
+        return this.#d3.zoomIdentity.translate(tx, ty).scale(clampedK); // Use clamped K
+    }
+
 
     // --- Public API Methods ---
 
@@ -477,42 +504,28 @@ class StreamingChart {
         if (!dataAdded) return;
 
         if (this.#targetElement) {
-            if (this.#isFollowing && needsScaleUpdate) {
+            // Only update scales/axes if following AND not currently zooming/panning
+            if (this.#isFollowing && !this.#isZoomingOrPanning) {
                 this.#updateScalesAndAxes(); // Updates scales and redraws axes/grid
                 this.#updateChartLines();    // Redraws lines based on new scales
             } else {
-                // Follow is OFF or no scale update needed (e.g., data added outside current view)
-                this.#updateChartLines(); // Redraw lines based on existing (frozen) scales
-
-                // --- REMOVED: Re-synchronization of D3 zoom state when follow is OFF ---
-                // This block was causing unintended panning when adding data while zoomed/panned.
-                // The view should remain static when follow is off.
-                /*
-                if (!this.#isFollowing && this.#zoomBehavior && dataAdded) {
-                    try {
-                        // ... (removed synchronization logic) ...
-                    } catch (error) {
-                        console.error("Error during zoom state synchronization in addData:", error);
-                    }
-                }
-                */
-                // --- End REMOVED ---
+                // Follow is OFF or user is interacting: only redraw lines on existing scales
+                this.#updateChartLines();
             }
         }
     }
 
+
     setView(view, options = {}) {
         if (this.#isDestroyed || !this.#targetElement) return;
 
-        // --- NEW: Disable follow mode ---
+        // --- Disable follow mode ---
         if (this.#isFollowing) {
             this.#isFollowing = false;
             updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
-             console.log("Follow mode turned OFF due to setView call.");
+            console.log("Follow mode turned OFF due to setView call.");
         }
-        this.#frozenXDomain = null; // View is being explicitly set
-        this.#frozenYDomain = null;
-        // --- End NEW ---
+        this.#isZoomingOrPanning = false; // Ensure interaction flag is off
 
         const currentXDomain = this.#scales.xScale.domain();
         const currentYDomain = this.#scales.yScale.domain();
@@ -531,39 +544,61 @@ class StreamingChart {
 
         const transitionDuration = typeof options.transition === "number" ? options.transition : (options.transition ? 250 : 0);
 
+        // Set the target domains directly
         this.#scales.xScale.domain([targetXMin, targetXMax]);
         this.#scales.yScale.domain(finalYDomain);
 
-        const fullX = getFullXDomain(this.#d3, this.#dataStore);
-        const fullY = getFullYDomain(this.#d3, this.#dataStore);
-        const tempXScale = this.#d3.scaleLinear().domain(fullX).range(this.#scales.xScale.range());
-        const tempYScale = this.#d3.scaleLinear().domain(fullY).range(this.#scales.yScale.range());
+        // Calculate the corresponding zoom transform for these domains
+        this.#currentZoomTransform = this.#calculateTransformForDomains([targetXMin, targetXMax], finalYDomain);
 
-        this.#currentZoomTransform = this.#d3.zoomTransform(this.#svgElements.zoomOverlay.node())
-                                        .rescaleX(tempXScale.domain(this.#scales.xScale.domain()))
-                                        .rescaleY(tempYScale.domain(this.#scales.yScale.domain()));
+        // Store the domains resulting from setView
+        this.#frozenXDomain = this.#scales.xScale.domain();
+        this.#frozenYDomain = this.#scales.yScale.domain();
 
-        if (transitionDuration > 0 && this.#zoomBehavior) {
-             const transition = this.#svgElements.svg.transition().duration(transitionDuration);
-             transition.call(this.#zoomBehavior.transform, this.#currentZoomTransform);
-             this.#updateScalesAndAxes(true, transition);
-             this.#updateChartLines(true, transition);
-        } else {
-            if (this.#zoomBehavior) {
-                 this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+        // Apply the transform using D3 zoom behavior
+        if (this.#zoomBehavior && this.#isInteractionEnabled()) {
+            if (transitionDuration > 0) {
+                const transition = this.#svgElements.svg.transition().duration(transitionDuration);
+                // Apply transform via transition
+                transition.call(this.#zoomBehavior.transform, this.#currentZoomTransform)
+                    .on("end", () => {
+                        // Ensure scales match transform after transition
+                        this.#scales.xScale = this.#currentZoomTransform.rescaleX(this.#calculateReferenceScale('x'));
+                        this.#scales.yScale = this.#currentZoomTransform.rescaleY(this.#calculateReferenceScale('y'));
+                        this.redraw(); // Full redraw after transition
+                    });
+                // Update axes/lines during transition
+                this.#updateScalesAndAxes(true, transition); // Will use the target domains set above
+                this.#updateChartLines(true, transition);
+            } else {
+                // Apply transform immediately
+                this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
+                // Ensure scales match transform
+                this.#scales.xScale = this.#currentZoomTransform.rescaleX(this.#calculateReferenceScale('x'));
+                this.#scales.yScale = this.#currentZoomTransform.rescaleY(this.#calculateReferenceScale('y'));
+                this.redraw(); // Redraw with final state
             }
-            this.redraw();
+        } else {
+             // No zoom behavior, just redraw based on manually set scales
+             this.redraw();
         }
-         // After scales are updated by setView logic:
-         // Store the domains resulting from setView
-         this.#frozenXDomain = this.#scales.xScale.domain();
-         this.#frozenYDomain = this.#scales.yScale.domain();
     }
+
+     // --- NEW Helper to get a base scale for transform calculations ---
+     #calculateReferenceScale(axis = 'x') {
+         // Use full data extent as the base reference for calculating transforms consistently
+         const fullDomain = axis === 'x'
+             ? getFullXDomain(this.#d3, this.#dataStore, this.#config.xAxis.min, this.#config.xAxis.max)
+             : getFullYDomain(this.#d3, this.#dataStore, this.#config.yAxis.min, this.#config.yAxis.max);
+         const range = axis === 'x' ? this.#scales.xScale.range() : this.#scales.yScale.range();
+         return this.#d3.scaleLinear().domain(fullDomain).range(range);
+     }
+
 
     resetView(options = {}) {
         if (this.#isDestroyed || !this.#targetElement) return;
 
-        // --- NEW: Enable follow mode on reset ---
+        // --- Enable follow mode on reset ---
         if (!this.#isFollowing) {
              this.#isFollowing = true;
              updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
@@ -571,28 +606,34 @@ class StreamingChart {
         }
         this.#frozenXDomain = null; // Reset clears any frozen state
         this.#frozenYDomain = null;
-        // --- End NEW ---
+        this.#isZoomingOrPanning = false; // Ensure interaction flag is off
 
-        const targetXDomain = getFullXDomain(this.#d3, this.#dataStore);
-        const targetYDomain = getFullYDomain(this.#d3, this.#dataStore);
+        // Target domains are calculated by #updateScalesAndAxes when isFollowing is true
+        // Set the zoom transform to identity
+        this.#currentZoomTransform = this.#d3.zoomIdentity;
 
         const transitionDuration = typeof options.transition === "number" ? options.transition : (options.transition ? 250 : 0);
 
-        this.#scales.xScale.domain(targetXDomain);
-        this.#scales.yScale.domain(targetYDomain);
-
-        this.#currentZoomTransform = this.#d3.zoomIdentity;
-
-        if (transitionDuration > 0 && this.#zoomBehavior) {
-            const transition = this.#svgElements.svg.transition().duration(transitionDuration);
-            transition.call(this.#zoomBehavior.transform, this.#d3.zoomIdentity);
-            this.#updateScalesAndAxes(true, transition);
-            this.#updateChartLines(true, transition);
-        } else {
-            if (this.#zoomBehavior) {
+        if (this.#zoomBehavior && this.#isInteractionEnabled()) {
+            if (transitionDuration > 0) {
+                const transition = this.#svgElements.svg.transition().duration(transitionDuration);
+                // Transition to identity transform
+                transition.call(this.#zoomBehavior.transform, this.#d3.zoomIdentity)
+                    .on("end", () => {
+                         this.#updateScalesAndAxes(); // Ensure scales match identity after transition
+                         this.redraw();
+                    });
+                 // Update scales/axes/lines towards the target state during transition
+                 this.#updateScalesAndAxes(true, transition); // Will calculate target domains based on follow=true
+                 this.#updateChartLines(true, transition);
+            } else {
+                // Apply identity transform immediately
                 this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#d3.zoomIdentity);
+                this.redraw(); // Redraw will use follow=true state
             }
-            this.redraw();
+        } else {
+             // No zoom behavior, just redraw based on follow=true state
+             this.redraw();
         }
     }
 
@@ -674,19 +715,8 @@ class StreamingChart {
         }
 
         if (needsInteractionUpdate && this.#targetElement) {
-            if (this.#zoomBehavior) {
-                applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, this.#isZoomEnabled());
-            }
-            
-            // Handle pan behavior changes
-            if (this.#config.interactions.pan) {
-                this.#setupDragBehavior(); // Set up drag if pan is enabled
-            } else {
-                // Remove drag behavior if pan is disabled
-                this.#svgElements.zoomOverlay
-                    .on(".drag", null)
-                    .style("cursor", null);
-            }
+            // Re-setup interactions based on new config
+            this.#setupInteractions();
         }
 
         if (needsRedraw) {
@@ -696,6 +726,7 @@ class StreamingChart {
 
     redraw() {
         if (this.#isDestroyed || !this.#targetElement) return;
+        // #updateScalesAndAxes now correctly handles follow state and active zoom/pan
         this.#updateScalesAndAxes();
         this.#updateChartLines();
         this.#updateChartLegend();
@@ -718,10 +749,9 @@ class StreamingChart {
             if (this.#zoomBehavior && this.#svgElements.zoomOverlay) {
                 this.#svgElements.zoomOverlay
                     .on(".zoom", null)
-                    .on(".drag", null) // Remove all drag event handlers
-                    .style("cursor", null); // Reset cursor style
+                    .style("cursor", "default");
             }
-            this.#zoomBehavior?.on("zoom", null);
+            this.#zoomBehavior?.on("zoom", null).on("start.zoom", null).on("end.zoom", null); // Clear internal listeners just in case
         }
 
         this.#frozenXDomain = null;

@@ -7,14 +7,19 @@
  * @param {object} d3 - The D3 library object.
  * @param {number} width - The chart drawing area width.
  * @param {number} height - The chart drawing area height.
- * @param {function} onZoom - The callback function to execute when a zoom event occurs.
+ * @param {function} onZoomStart - Callback for zoom start.
+ * @param {function} onZoom - Callback during zoom/pan.
+ * @param {function} onZoomEnd - Callback for zoom end.
  * @returns {object} - The configured D3 zoom behavior instance.
  */
-function initializeZoom(d3, width, height, onZoom) {
+function initializeZoom(d3, width, height, onZoomStart, onZoom, onZoomEnd) {
     const zoomBehavior = d3.zoom()
-        .scaleExtent([0.1, 100]) // Zoom limits
+        .scaleExtent([0.01, 500]) // Wider zoom limits for "infinite" feel
         .extent([[0, 0], [width, height]])
-        .on("zoom", onZoom); // Attach the handler passed from the chart instance
+        // Keep double-click zoom disabled unless specifically needed
+        .on("start.zoom", onZoomStart) // Attach start handler
+        .on("zoom", onZoom)         // Attach the main handler
+        .on("end.zoom", onZoomEnd);   // Attach end handler
 
     return zoomBehavior;
 }
@@ -24,16 +29,19 @@ function initializeZoom(d3, width, height, onZoom) {
  * @param {object} zoomOverlay - The D3 selection of the zoom overlay rectangle.
  * @param {object} zoomBehavior - The configured D3 zoom behavior instance.
  * @param {boolean} enableZoom - Whether zooming is currently enabled.
+ * @param {boolean} enablePan - Whether panning is currently enabled.
  */
-function applyZoomBehavior(zoomOverlay, zoomBehavior, enableZoom) {
-    if (enableZoom) {
-        zoomOverlay
-            .call(zoomBehavior)
-            .on("dblclick.zoom", null) // Disable double-click reset
-            .on("mousedown.zoom", null) // Disable drag to pan
-            .on("touchstart.zoom", null); // Disable touch to pan
+function applyZoomBehavior(zoomOverlay, zoomBehavior, enableZoom, enablePan) {
+    if (enableZoom || enablePan) {
+        zoomOverlay.call(zoomBehavior);
+        // Conditionally disable zoom or pan if needed (more complex)
+        // For now, if either is enabled, enable the whole behavior.
+        // We can filter events in the handler if necessary.
+        zoomOverlay.style("cursor", enablePan ? "grab" : "default"); // Set cursor based on pan
+        zoomOverlay.on("dblclick.zoom", null); // Keep double-click zoom disabled
     } else {
-        zoomOverlay.on(".zoom", null); // Detach zoom behavior
+        zoomOverlay.on(".zoom", null); // Detach all zoom behavior listeners
+        zoomOverlay.style("cursor", "default");
     }
 }
 
@@ -45,53 +53,32 @@ function applyZoomBehavior(zoomOverlay, zoomBehavior, enableZoom) {
  */
 function updateZoomExtents(zoomBehavior, width, height) {
     if (zoomBehavior) {
-        zoomBehavior
-            .extent([[0, 0], [width, height]]);
+        zoomBehavior.extent([[0, 0], [width, height]]);
     }
 }
 
 /**
- * Handles the zoom event, updating scales and triggering redraws.
- * This function now ONLY handles wheel/scroll events for zooming.
+ * Handles the zoom/pan event, updating scales and triggering redraws.
+ * This function now applies the transform directly to the *current* scales.
  * @param {object} event - The D3 zoom event object.
- * @param {object} d3 - The D3 library object.
- * @param {object} config - The chart configuration.
- * @param {object} scales - Object containing xScale and yScale.
- * @param {object} fullXScale - D3 scaleLinear instance for the full X data extent.
- * @param {object} fullYScale - D3 scaleLinear instance for the full Y data extent.
+ * @param {object} scales - Object containing the *current* xScale and yScale.
+ * @param {object} initialScales - Object containing copies of the scales *before* the current zoom gesture started.
  * @param {function} redrawAxesAndGrid - Function to redraw axes and grid.
  * @param {function} redrawLines - Function to redraw data lines.
- * @param {object} previousTransform - The previous D3 zoom transform state.
- * @returns {object} - The new zoom transform state.
  */
-function handleZoom(event, d3, config, scales, fullXScale, fullYScale, redrawAxesAndGrid, redrawLines, previousTransform) {
-    if (!previousTransform) previousTransform = d3.zoomIdentity;
-    if (!config.interactions.zoom) return previousTransform;
+function handleZoom(event, scales, initialScales, redrawAxesAndGrid, redrawLines) {
+    const transform = event.transform;
 
-    const currentTransform = event.transform;
-    const sourceEvent = event.sourceEvent;
+    // Rescale the initial scales based on the current transform
+    // This correctly handles both zoom (relative to pointer) and pan
+    scales.xScale = transform.rescaleX(initialScales.xScale);
+    scales.yScale = transform.rescaleY(initialScales.yScale);
 
-    // Only process wheel events for zooming
-    if (sourceEvent && sourceEvent.type === 'wheel') {
-        if (config.interactions.zoom) {
-            // Apply zoom transform relative to the full data extent
-            const newXScale = currentTransform.rescaleX(fullXScale.copy());
-            const newYScale = currentTransform.rescaleY(fullYScale.copy());
+    // Redraw components based on the new scales
+    redrawAxesAndGrid();
+    redrawLines();
 
-            // Update the actual scales
-            scales.xScale.domain(newXScale.domain());
-            scales.yScale.domain(newYScale.domain());
-
-            // Redraw
-            redrawAxesAndGrid();
-            redrawLines();
-
-            return currentTransform;
-        }
-    }
-
-    // For any other event type, maintain previous state
-    return previousTransform;
+    // No need to return transform, the chart instance gets it from the event
 }
 
 module.exports = {
