@@ -6,7 +6,8 @@ const defaultConfig = {
   xAxis: {
     range: { min: null, max: null },
     label: "",
-    showGridLines: true
+    showGridLines: true,
+    maxTrackX: Infinity // NEW: Max X-axis duration to show when following
   },
   yAxis: {
     range: { min: null, max: null },

@@ -519,8 +519,8 @@ class StreamingChart {
         // --- Logic for when NOT actively zooming/panning ---
         if (this.#isFollowing) {
             // --- Follow Mode ON ---
-            // Calculate domains based on data and config
-            updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+            // Calculate domains based on data, config, and *follow state*
+            updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore, this.#isFollowing); // Pass isFollowing
             // Ensure zoom transform is identity and initial/reference scales match
             if (this.#currentZoomTransform !== this.#d3.zoomIdentity) {
                  this.#syncScalesAndZoomState(this.#scales.xScale.domain(), this.#scales.yScale.domain(), this.#d3.zoomIdentity);
@@ -717,9 +717,9 @@ class StreamingChart {
         this.#frozenYDomain = null;
         this.#isZoomingOrPanning = false; // Ensure interaction flag is off
 
-        // Calculate the 'natural' domains based on current data/config
+        // Calculate the 'natural' domains based on current data/config, considering follow state
         const tempScales = { xScale: this.#scales.xScale.copy(), yScale: this.#scales.yScale.copy() };
-        updateScaleDomains(this.#d3, this.#config, tempScales, this.#dataStore);
+        updateScaleDomains(this.#d3, this.#config, tempScales, this.#dataStore, this.#isFollowing); // Pass isFollowing
         const targetXDomain = tempScales.xScale.domain();
         const targetYDomain = tempScales.yScale.domain();
 
@@ -787,6 +787,12 @@ class StreamingChart {
             needsScaleUpdate = true; // Need to recalculate domains
             needsZoomReset = true; // Axis range changes require resetting the base zoom state
         }
+
+        // --- NEW: Check if maxTrackX changed ---
+        if (oldXAxis.maxTrackX !== this.#config.xAxis.maxTrackX) {
+            needsScaleUpdate = true; // Need to recalculate domains if following
+        }
+        // --- End NEW ---
 
         // Check if axis labels changed
         if (oldXAxis.label !== this.#config.xAxis.label || oldYAxis.label !== this.#config.yAxis.label) {
