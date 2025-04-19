@@ -88,14 +88,32 @@ function getFullYDomain(d3, dataStore) {
  * Calculates the target X domain based on config and data.
  * @param {object} d3 - The D3 library object.
  * @param {object} config - The chart configuration.
- * @param {object} xScale - The current D3 xScale instance (unused).
  * @param {object} dataStore - The main data store.
+ * @param {boolean} isFollowing - Whether the chart is in follow mode.
  * @returns {Array<number>} - The calculated [minX, maxX] domain.
  */
-function calculateXDomain(d3, config, xScale, dataStore) {
+function calculateXDomain(d3, config, dataStore, isFollowing) { // Added isFollowing parameter
     const configRange = config.xAxis.range;
+    const maxTrackX = config.xAxis.maxTrackX;
 
-    // Priority 1: Explicit fixed range in config
+    // Get the full extent of the data first
+    const fullDataX = getFullXDomain(d3, dataStore);
+    let [dataMinX, dataMaxX] = fullDataX;
+
+    let targetMinX, targetMaxX;
+
+    // --- Determine target domain based on follow state and maxTrackX ---
+    if (isFollowing && isFinite(maxTrackX) && maxTrackX > 0) {
+        // Follow mode with tracking window
+        targetMaxX = dataMaxX; // Always end at the latest data point
+        targetMinX = Math.max(dataMinX, dataMaxX - maxTrackX); // Start `maxTrackX` seconds before, but not before the actual data start
+    } else {
+        // Not following, or tracking full range (Infinity)
+        targetMinX = dataMinX;
+        targetMaxX = dataMaxX;
+    }
+
+    // --- Apply explicit fixed range from config (overrides tracking/data extent) ---
     if (
         configRange &&
         typeof configRange.min === "number" &&
@@ -107,30 +125,29 @@ function calculateXDomain(d3, config, xScale, dataStore) {
             [configRange.min, configRange.min + 1];
     }
 
-    // Priority 2: Calculate from full data extent
-    const fullDataX = getFullXDomain(d3, dataStore);
-    let [minX, maxX] = fullDataX; // getFullXDomain handles no/single data point padding
-
-    // Apply explicit config bounds individually if they exist
+    // --- Apply individual config bounds (constrain the calculated target domain) ---
     if (configRange) {
         if (typeof configRange.min === "number") {
-            minX = configRange.min;
+            targetMinX = Math.max(targetMinX, configRange.min);
         }
         if (typeof configRange.max === "number") {
-            maxX = configRange.max;
+            targetMaxX = Math.min(targetMaxX, configRange.max);
         }
     }
 
-    // Final check: Ensure min < max after applying constraints
-    if (minX >= maxX) {
+    // --- Final checks for validity ---
+    // Ensure min < max after applying constraints
+    if (targetMinX >= targetMaxX) {
         // If bounds came from config, respect them but ensure range > 0
         if (typeof configRange?.min === 'number' && typeof configRange?.max === 'number') {
              return [configRange.min, configRange.min + 1];
         }
         // If derived from data or single bound, add padding
-        return [minX - 1, maxX + 1];
+        // Use the calculated targetMaxX as the reference if possible
+        return [targetMaxX - 1, targetMaxX];
     }
-    return [minX, maxX];
+
+    return [targetMinX, targetMaxX];
 }
 
 /**
@@ -206,10 +223,12 @@ function calculateYDomain(d3, config, dataStore, currentXDomain) {
  * @param {object} config - The chart configuration.
  * @param {object} scales - Object containing xScale and yScale.
  * @param {object} dataStore - The main data store.
+ * @param {boolean} isFollowing - Whether the chart is in follow mode.
  */
-function updateScaleDomains(d3, config, scales, dataStore) {
-    const xDomain = calculateXDomain(d3, config, scales.xScale, dataStore);
-    const yDomain = calculateYDomain(d3, config, dataStore, xDomain); // Y domain depends on visible X
+function updateScaleDomains(d3, config, scales, dataStore, isFollowing) { // Added isFollowing parameter
+    // Calculate domains based on data, config, and follow state
+    const xDomain = calculateXDomain(d3, config, dataStore, isFollowing); // Pass isFollowing
+    const yDomain = calculateYDomain(d3, config, dataStore, xDomain); // Y domain might depend on the calculated X domain
 
     scales.xScale.domain(xDomain);
     scales.yScale.domain(yDomain);
