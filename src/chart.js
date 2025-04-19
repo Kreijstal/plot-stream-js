@@ -174,18 +174,18 @@ class StreamingChart {
 
         if (zoomEnabled || panEnabled) {
             if (!this.#zoomBehavior) {
-                // --- UPDATED: Use the new combined handler ---
+                // --- UPDATED: Use a wider scaleExtent ---
                 this.#zoomBehavior = this.#d3.zoom()
-                    .scaleExtent([0.1, 100]) // Example extent, make configurable?
+                    // Give D3 a very wide range; our domain width/height checks will be the effective limit.
+                    .scaleExtent([0.001, 10000]) // Wider range (e.g., 1000x zoom out, 10000x zoom in)
                     .extent([[0, 0], [this.#width, this.#height]])
-                    .on("zoom", this.#handleZoomEvent.bind(this)); // Use the new handler
+                    .on("zoom", this.#handleZoomEvent.bind(this));
                 // --- End UPDATED ---
             }
             // Apply the behavior (enables zoom/pan based on config)
             applyZoomBehavior(this.#svgElements.zoomOverlay, this.#zoomBehavior, zoomEnabled, panEnabled);
 
             // Apply the current transform state immediately
-            // Use isProgrammaticZoom flag to prevent the event handler from reacting to this call
             this.#isProgrammaticZoom = true;
             this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
             this.#isProgrammaticZoom = false;

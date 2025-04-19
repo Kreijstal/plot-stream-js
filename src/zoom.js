@@ -1,28 +1,6 @@
 /**
- * D3 Zoom and Pan handling for StreamingChart.
+ * D3 Zoom and Pan handling utilities for StreamingChart.
  */
-
-/**
- * Initializes the D3 zoom behavior.
- * @param {object} d3 - The D3 library object.
- * @param {number} width - The chart drawing area width.
- * @param {number} height - The chart drawing area height.
- * @param {function} onZoomStart - Callback for zoom start.
- * @param {function} onZoom - Callback during zoom/pan.
- * @param {function} onZoomEnd - Callback for zoom end.
- * @returns {object} - The configured D3 zoom behavior instance.
- */
-function initializeZoom(d3, width, height, onZoomStart, onZoom, onZoomEnd) {
-    const zoomBehavior = d3.zoom()
-        .scaleExtent([0.01, 500]) // Wider zoom limits for "infinite" feel
-        .extent([[0, 0], [width, height]])
-        // Keep double-click zoom disabled unless specifically needed
-        .on("start.zoom", onZoomStart) // Attach start handler
-        .on("zoom", onZoom)         // Attach the main handler
-        .on("end.zoom", onZoomEnd);   // Attach end handler
-
-    return zoomBehavior;
-}
 
 /**
  * Applies the zoom behavior to the target overlay element.
@@ -57,33 +35,7 @@ function updateZoomExtents(zoomBehavior, width, height) {
     }
 }
 
-/**
- * Handles the zoom/pan event, updating scales and triggering redraws.
- * This function now applies the transform directly to the *current* scales.
- * @param {object} event - The D3 zoom event object.
- * @param {object} scales - Object containing the *current* xScale and yScale.
- * @param {object} initialScales - Object containing copies of the scales *before* the current zoom gesture started.
- * @param {function} redrawAxesAndGrid - Function to redraw axes and grid.
- * @param {function} redrawLines - Function to redraw data lines.
- */
-function handleZoom(event, scales, initialScales, redrawAxesAndGrid, redrawLines) {
-    const transform = event.transform;
-
-    // Rescale the initial scales based on the current transform
-    // This correctly handles both zoom (relative to pointer) and pan
-    scales.xScale = transform.rescaleX(initialScales.xScale);
-    scales.yScale = transform.rescaleY(initialScales.yScale);
-
-    // Redraw components based on the new scales
-    redrawAxesAndGrid();
-    redrawLines();
-
-    // No need to return transform, the chart instance gets it from the event
-}
-
 module.exports = {
-    initializeZoom,
     applyZoomBehavior,
     updateZoomExtents,
-    handleZoom
 };
