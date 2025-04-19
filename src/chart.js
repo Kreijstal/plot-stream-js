@@ -301,7 +301,7 @@ class StreamingChart {
         if (sourceEvent && sourceEvent.type === "wheel" && sourceEvent.altKey) {
             isAltZoom = true;
             sourceEvent.preventDefault();
-            const wheelDeltaY = sourceEvent.deltaY || 0;
+            const wheelDeltaY = sourceEvent.deltaY || 0; // <-- Get deltaY
             const pointerY_svg = sourceEvent.offsetY;
             const pointerY_plot = pointerY_svg - this.#margin.top;
             const zoomDirection = wheelDeltaY < 0 ? independentZoomFactor : 1 / independentZoomFactor;
@@ -313,20 +313,24 @@ class StreamingChart {
                 yValue_plot + (y1 - yValue_plot) / zoomDirection
             ];
             domainChangedY = true;
+
+            // --- Debug log ---
+            if (this.#config.debug) {
+                console.log(`[DEBUG] AltScroll(Y): deltaY=${wheelDeltaY.toFixed(3)}`); // <-- Log deltaY
+            }
+            // --- End Debug log ---
         }
         // --- Shift+Scroll Logic (X-axis zoom) ---
         else if (
             sourceEvent &&
             sourceEvent.type === "wheel" &&
-            sourceEvent.shiftKey // <-- SIMPLIFIED: Only check for shiftKey
-            // REMOVED: || Math.abs(sourceEvent.deltaX) > Math.abs(sourceEvent.deltaY * 2)
+            sourceEvent.shiftKey
         ) {
             isShiftZoom = true;
             sourceEvent.preventDefault();
-            const wheelDeltaX = sourceEvent.deltaX || 0;
+            const wheelDeltaX = sourceEvent.deltaX || 0; // <-- Get deltaX
             const pointerX_svg = sourceEvent.offsetX;
             const pointerX_plot = pointerX_svg - this.#margin.left;
-            // Ensure zoom direction calculation is consistent if needed
             const zoomDirection = wheelDeltaX < 0 ? independentZoomFactor : 1 / independentZoomFactor;
             const xValue_plot = this.#referenceXScale.invert(pointerX_plot);
             const [x0, x1] = this.#referenceXScale.domain();
@@ -335,6 +339,12 @@ class StreamingChart {
                 xValue_plot + (x1 - xValue_plot) / zoomDirection
             ];
             domainChangedX = true;
+
+            // --- Debug log ---
+            if (this.#config.debug) {
+                console.log(`[DEBUG] ShiftScroll(X): deltaX=${wheelDeltaX.toFixed(3)}`); // <-- Log deltaX
+            }
+            // --- End Debug log ---
         }
         // --- Standard Zoom/Pan Logic ---
         else if (sourceEvent) {
