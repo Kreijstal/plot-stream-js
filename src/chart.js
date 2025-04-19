@@ -484,53 +484,19 @@ class StreamingChart {
                 // Follow is OFF or no scale update needed (e.g., data added outside current view)
                 this.#updateChartLines(); // Redraw lines based on existing (frozen) scales
 
-                // --- NEW: Re-synchronize D3 zoom state if follow is OFF --- 
-                // This ensures zoom behavior is aware of the current view relative to the 
-                // potentially changed full data extent, even if the view itself didn't change.
-                if (!this.#isFollowing && this.#zoomBehavior && dataAdded) { 
+                // --- REMOVED: Re-synchronization of D3 zoom state when follow is OFF ---
+                // This block was causing unintended panning when adding data while zoomed/panned.
+                // The view should remain static when follow is off.
+                /*
+                if (!this.#isFollowing && this.#zoomBehavior && dataAdded) {
                     try {
-                        const fullX = getFullXDomain(this.#d3, this.#dataStore); // Use updated dataStore
-                        const fullY = getFullYDomain(this.#d3, this.#dataStore); // Use updated dataStore
-
-                        // Ensure ranges are valid before creating temp scales
-                        const xRange = this.#scales.xScale.range();
-                        const yRange = this.#scales.yScale.range();
-                        if (!xRange || !yRange || xRange.length < 2 || yRange.length < 2) {
-                            console.warn("Cannot sync zoom: Invalid scale ranges.");
-                            return;
-                        }
-
-                        const tempXScale = this.#d3.scaleLinear().domain(fullX).range(xRange);
-                        const tempYScale = this.#d3.scaleLinear().domain(fullY).range(yRange);
-
-                        // Use the frozen domains if available, otherwise current domains
-                        const frozenX = this.#frozenXDomain || this.#scales.xScale.domain();
-                        const frozenY = this.#frozenYDomain || this.#scales.yScale.domain();
-
-                        // Ensure frozen domains are valid
-                        if (!frozenX || !frozenY || frozenX.length < 2 || frozenY.length < 2) {
-                             console.warn("Cannot sync zoom: Invalid frozen/current domains.");
-                             return;
-                        }
-
-                        // Calculate the transform needed to map the temp scales to the frozen domains
-                        const newTransform = this.#d3.zoomIdentity
-                            .translate(xRange[0], yRange[0]) // Start with base translation
-                            .scale(1) // Start with base scale
-                            .rescaleX(tempXScale.copy().domain(frozenX))
-                            .rescaleY(tempYScale.copy().domain(frozenY));
-
-                        // Store the potentially updated transform state
-                        this.#currentZoomTransform = newTransform;
-
-                        // Silently update the D3 zoom behavior's internal state
-                        this.#zoomBehavior.transform(this.#svgElements.zoomOverlay, this.#currentZoomTransform);
-                        // console.log("Re-synchronized D3 zoom state after addData (follow OFF).");
+                        // ... (removed synchronization logic) ...
                     } catch (error) {
                         console.error("Error during zoom state synchronization in addData:", error);
                     }
                 }
-                // --- End NEW ---
+                */
+                // --- End REMOVED ---
             }
         }
     }
