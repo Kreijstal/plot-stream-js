@@ -263,19 +263,20 @@ function updateFollowButtonAppearance(buttonGroup, isFollowing) {
 }
 
 /**
- * Calculates the position for the follow button.
+ * Calculates the position for the follow button and applies it.
  * @param {object} buttonGroup - D3 selection of the button group.
  * @param {object} margin - The margin configuration object.
  * @param {number} width - The chart drawing area width.
  * @param {number} height - The chart drawing area height.
- * @returns {string} - The transform string for positioning.
  */
-function getFollowButtonPosition(buttonGroup, margin, width, height) {
-    const buttonBBox = buttonGroup?.node()?.getBBox() || { width: 0, height: 0 };
+function updateFollowButtonPosition(buttonGroup, margin, width, height) {
+    if (!buttonGroup || buttonGroup.empty()) return;
+
+    const buttonBBox = buttonGroup.node()?.getBBox() || { width: 0, height: 0 };
     const x = margin.left + width - buttonBBox.width - 10;
     const y = margin.top + 10;
 
-    return `translate(${x}, ${y})`;
+    buttonGroup.attr("transform", `translate(${x}, ${y})`);
 }
 
 /**
@@ -326,8 +327,7 @@ module.exports = {
     setupResizeObserver,
     handleResize, // Make sure the name matches the function definition
     cleanupDOM,
-    // --- ADD THESE ---
     createFollowButton,
     updateFollowButtonAppearance,
-    getFollowButtonPosition,
+    updateFollowButtonPosition, // <-- Add new export
 };

@@ -5,22 +5,23 @@
 
 const { defaultConfig, deepMerge } = require('./config');
 const { createColorScale, getColorForSeries } = require('./utils');
-const { initSeriesConfigs, getDefaultSeriesConfig, pruneData, ensureSeriesExists, updateSeriesConfig: updateSeriesConfigInternal } = require('./data');
+// Import assignInitialColors
+const { initSeriesConfigs, getDefaultSeriesConfig, pruneData, ensureSeriesExists, updateSeriesConfig: updateSeriesConfigInternal, assignInitialColors } = require('./data');
 const { initializeScales, initializeAxes, getFullXDomain, getFullYDomain, calculateXDomain, calculateYDomain, updateScaleDomains, updateAxes } = require('./scalesAxes');
 const { initializeLineGenerator, updateGridLines, updateLines, updateLegend, getLegendPosition } = require('./rendering');
 const { initializeZoom, applyZoomBehavior, updateZoomExtents, handleZoom } = require('./zoom');
 const {
-    calculateDimensions, // Keep existing ones
+    calculateDimensions,
     createSVGStructure,
     addAxisLabels,
     updateAxisLabelsText,
     setupResizeObserver,
-    handleResize, // Use the correct name
+    handleResize,
     cleanupDOM,
-    // --- ADD THESE ---
     createFollowButton,
+    // Import the moved functions
     updateFollowButtonAppearance,
-    getFollowButtonPosition
+    updateFollowButtonPosition
 } = require('./dom');
 
 
@@ -84,8 +85,8 @@ class StreamingChart {
         initSeriesConfigs(this.#config, this.#seriesConfigs);
         this.#colorScale = createColorScale(this.#d3); // Initialize color scale early
 
-        // Assign initial colors if needed (for series defined in initialConfig without color)
-        this.#assignInitialColors();
+        // Use imported function
+        assignInitialColors(this.#seriesConfigs, this.#colorScale);
 
         // Unique ID for clipping
         this.#clipPathId = `clip-${Math.random().toString(36).substring(2, 15)}`;
@@ -99,7 +100,8 @@ class StreamingChart {
             this.#initializeChartDOM();
             // --- NEW: Create the follow button ---
             this.#followButtonGroup = createFollowButton(this.#svgElements.svg, this.#onFollowButtonClick.bind(this));
-            this.#updateFollowButtonPosition(); // Set initial position
+            // Use imported function
+            updateFollowButtonPosition(this.#followButtonGroup, this.#margin, this.#width, this.#height);
             // --- End NEW ---
             this.#setupInteractions();
             this.#setupResizeHandling();
@@ -114,14 +116,6 @@ class StreamingChart {
     }
 
     // --- Private Initialization & Setup ---
-
-    #assignInitialColors() {
-        for (const seriesId in this.#seriesConfigs) {
-            if (!this.#seriesConfigs[seriesId].color) {
-                this.#seriesConfigs[seriesId].color = getColorForSeries(this.#colorScale, seriesId);
-            }
-        }
-    }
 
     #initializeChartDOM() {
         if (!this.#targetElement) return;
@@ -180,7 +174,7 @@ class StreamingChart {
             // Disable follow mode on drag start
             if (this.#isFollowing) {
                 this.#isFollowing = false;
-                this.#updateFollowButtonAppearance();
+                updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
                 console.log("Follow mode turned OFF due to user pan.");
             }
         };
@@ -318,25 +312,9 @@ class StreamingChart {
             // Redraw lines with the new scales
             this.#updateChartLines();
         }
-        this.#updateFollowButtonAppearance();
+        // Use imported function
+        updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
         console.log(`Follow mode set to: ${this.#isFollowing}`);
-    }
-
-    #updateFollowButtonAppearance() {
-        if (this.#followButtonGroup) {
-            updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
-        }
-    }
-
-    #updateFollowButtonPosition() {
-        if (this.#followButtonGroup) {
-             this.#followButtonGroup.attr("transform", getFollowButtonPosition(
-                 this.#followButtonGroup,
-                 this.#margin,
-                 this.#width,
-                 this.#height
-             ));
-        }
     }
 
     // --- Event Handlers ---
@@ -349,7 +327,8 @@ class StreamingChart {
             this.#isFollowing = false;
             this.#frozenXDomain = null; // Don't freeze, the zoom defines the view
             this.#frozenYDomain = null;
-            this.#updateFollowButtonAppearance();
+            // Use imported function
+            updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
             console.log("Follow mode turned OFF due to user interaction.");
         }
 
@@ -402,7 +381,8 @@ class StreamingChart {
             if (this.#svgElements.legendGroup) {
                 this.#svgElements.legendGroup.attr("transform", getLegendPosition(this.#svgElements.legendGroup.node(), this.#config, this.#margin, this.#width, this.#height));
             }
-            this.#updateFollowButtonPosition(); // Call our new helper
+            // Use imported function
+            updateFollowButtonPosition(this.#followButtonGroup, this.#margin, this.#width, this.#height);
         };
         const redraw = () => this.redraw();
 
@@ -561,7 +541,7 @@ class StreamingChart {
         // --- NEW: Disable follow mode ---
         if (this.#isFollowing) {
             this.#isFollowing = false;
-            this.#updateFollowButtonAppearance();
+            updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
              console.log("Follow mode turned OFF due to setView call.");
         }
         this.#frozenXDomain = null; // View is being explicitly set
@@ -620,7 +600,7 @@ class StreamingChart {
         // --- NEW: Enable follow mode on reset ---
         if (!this.#isFollowing) {
              this.#isFollowing = true;
-             this.#updateFollowButtonAppearance();
+             updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
              console.log("Follow mode turned ON due to resetView call.");
         }
         this.#frozenXDomain = null; // Reset clears any frozen state

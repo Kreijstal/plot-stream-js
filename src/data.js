@@ -109,11 +109,24 @@ function updateSeriesConfig(seriesId, partialConfig, seriesConfigs) {
     return true;
 }
 
+/**
+ * Assigns initial colors to series defined in the config if they don't have one.
+ * @param {object} seriesConfigs - The series configuration object.
+ * @param {function} colorScale - The D3 color scale instance.
+ */
+function assignInitialColors(seriesConfigs, colorScale) {
+    for (const seriesId in seriesConfigs) {
+        if (!seriesConfigs[seriesId].color) {
+            seriesConfigs[seriesId].color = getColorForSeries(colorScale, seriesId);
+        }
+    }
+}
 
 module.exports = {
     initSeriesConfigs,
     getDefaultSeriesConfig,
     pruneData,
     ensureSeriesExists,
-    updateSeriesConfig
+    updateSeriesConfig,
+    assignInitialColors // <-- Add new export
 };
