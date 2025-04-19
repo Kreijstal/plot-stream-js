@@ -344,15 +344,20 @@ class StreamingChart {
     #onZoom(event) {
         if (this.#isDestroyed) return;
 
-        // --- NEW: Disable follow mode on user zoom/pan ---
-        if (this.#isFollowing) {
+        // Only disable follow mode if the zoom event was triggered by a direct user interaction
+        if (this.#isFollowing && event.sourceEvent) {
             this.#isFollowing = false;
             this.#frozenXDomain = null; // Don't freeze, the zoom defines the view
             this.#frozenYDomain = null;
             this.#updateFollowButtonAppearance();
             console.log("Follow mode turned OFF due to user interaction.");
         }
-        // --- End NEW ---
+
+        // Calculate full extent scales for zooming
+        const fullXDomain = getFullXDomain(this.#d3, this.#dataStore);
+        const fullYDomain = getFullYDomain(this.#d3, this.#dataStore);
+        const fullXScale = this.#d3.scaleLinear().domain(fullXDomain).range(this.#scales.xScale.range());
+        const fullYScale = this.#d3.scaleLinear().domain(fullYDomain).range(this.#scales.yScale.range());
 
         const redrawAxesAndGrid = () => {
             updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height);
@@ -361,18 +366,15 @@ class StreamingChart {
         const redrawLines = () => {
             updateLines(this.#svgElements.linesGroup, this.#dataStore, this.#seriesConfigs, this.#lineGenerator);
         };
-        const getFullX = () => getFullXDomain(this.#d3, this.#dataStore);
-        const getFullY = () => getFullYDomain(this.#d3, this.#dataStore);
 
         this.#currentZoomTransform = handleZoom(
             event, this.#d3, this.#config, this.#scales,
-            getFullX, getFullY,
+            fullXScale, fullYScale, // Pass full extent scales
             redrawAxesAndGrid, redrawLines,
-            this.#currentZoomTransform, // Pass the previous transform state
-            this.#width, this.#height // Pass width and height
+            this.#currentZoomTransform,
+            this.#width, this.#height
         );
         // Store the domains resulting from the zoom/pan
-        // Only store if follow mode is off, otherwise follow mode dictates domain
         if (!this.#isFollowing) {
             this.#frozenXDomain = this.#scales.xScale.domain();
             this.#frozenYDomain = this.#scales.yScale.domain();

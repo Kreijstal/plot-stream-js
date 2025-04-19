@@ -57,14 +57,14 @@ function updateZoomExtents(zoomBehavior, width, height) {
  * @param {object} d3 - The D3 library object.
  * @param {object} config - The chart configuration.
  * @param {object} scales - Object containing xScale and yScale.
- * @param {function} getFullXDomain - Function to get the full X data extent.
- * @param {function} getFullYDomain - Function to get the full Y data extent.
+ * @param {object} fullXScale - D3 scaleLinear instance for the full X data extent.
+ * @param {object} fullYScale - D3 scaleLinear instance for the full Y data extent.
  * @param {function} redrawAxesAndGrid - Function to redraw axes and grid.
  * @param {function} redrawLines - Function to redraw data lines.
  * @param {object} previousTransform - The previous D3 zoom transform state.
  * @returns {object} - The new zoom transform state.
  */
-function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, redrawAxesAndGrid, redrawLines, previousTransform) {
+function handleZoom(event, d3, config, scales, fullXScale, fullYScale, redrawAxesAndGrid, redrawLines, previousTransform) {
     if (!previousTransform) previousTransform = d3.zoomIdentity;
     if (!config.interactions.zoom) return previousTransform;
 
@@ -74,12 +74,9 @@ function handleZoom(event, d3, config, scales, getFullXDomain, getFullYDomain, r
     // Only process wheel events for zooming
     if (sourceEvent && sourceEvent.type === 'wheel') {
         if (config.interactions.zoom) {
-            const fullX = getFullXDomain();
-            const fullY = getFullYDomain();
-
-            // Apply zoom transform
-            const newXScale = currentTransform.rescaleX(scales.xScale.copy().domain(fullX));
-            const newYScale = currentTransform.rescaleY(scales.yScale.copy().domain(fullY));
+            // Apply zoom transform relative to the full data extent
+            const newXScale = currentTransform.rescaleX(fullXScale.copy());
+            const newYScale = currentTransform.rescaleY(fullYScale.copy());
 
             // Update the actual scales
             scales.xScale.domain(newXScale.domain());
