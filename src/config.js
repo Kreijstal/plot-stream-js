@@ -29,7 +29,8 @@ const defaultConfig = {
     position: "top-right"
   },
   renderingHint: "quality",
-  maxDataPointsPerSeries: 1000
+  maxDataPointsPerSeries: 1000,
+  debug: false // <-- Add debug flag
 };
 
 function isObject(item) {

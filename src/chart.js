@@ -274,7 +274,11 @@ class StreamingChart {
             // Sync initial/reference scales to this state *before* applying the new zoom
             this.#syncScalesAndZoomState(this.#frozenXDomain, this.#frozenYDomain);
             updateFollowButtonAppearance(this.#followButtonGroup, this.#isFollowing);
-            console.log("Follow mode turned OFF due to user interaction.");
+            // --- Debug log ---
+            if (this.#config.debug) {
+                console.log("[DEBUG] Follow mode turned OFF due to user interaction.");
+            }
+            // --- End Debug log ---
         }
 
         // Set zooming flag (useful for addData logic)
@@ -343,8 +347,21 @@ class StreamingChart {
             this.#currentZoomTransform = transform;
             this.#lastZoomLevel = transform.k;
         } else {
-             console.log("Zoom event with no sourceEvent, ignoring for domain change.");
+             // --- Debug log ---
+             if (this.#config.debug) {
+                 console.log("[DEBUG] Zoom event with no sourceEvent, ignoring for domain change.");
+             }
+             // --- End Debug log ---
         }
+
+        // --- NEW: Debug log before limits ---
+        if (this.#config.debug && (domainChangedX || domainChangedY)) {
+            console.log(`[DEBUG] Zoom Event Type: ${isAltZoom ? 'AltScroll(Y)' : isShiftZoom ? 'ShiftScroll(X)' : 'Standard'}`);
+            console.log(`[DEBUG] Domains BEFORE limits: X=[${newXDomain.map(d => d.toFixed(3)).join(', ')}], Y=[${newYDomain.map(d => d.toFixed(3)).join(', ')}]`);
+            console.log(`[DEBUG] Limits: X=[${this.#config.xAxis.minDomainWidth}, ${this.#config.xAxis.maxDomainWidth}], Y=[${this.#config.yAxis.minDomainHeight}, ${this.#config.yAxis.maxDomainHeight}]`);
+        }
+        // --- End NEW ---
+
 
         // --- NEW: Enforce Domain Width/Height Limits ---
         const { minDomainWidth, maxDomainWidth } = this.#config.xAxis;
@@ -353,7 +370,11 @@ class StreamingChart {
         if (domainChangedX) {
             const newWidth = Math.abs(newXDomain[1] - newXDomain[0]);
             if (newWidth < minDomainWidth || newWidth > maxDomainWidth) {
-                // console.log(`X-Domain width ${newWidth.toFixed(3)} out of bounds [${minDomainWidth}, ${maxDomainWidth}]. Reverting X.`);
+                 // --- Debug log ---
+                 if (this.#config.debug) {
+                     console.log(`[DEBUG] X-Domain width ${newWidth.toFixed(3)} out of bounds [${minDomainWidth}, ${maxDomainWidth}]. Reverting X.`);
+                 }
+                 // --- End Debug log ---
                 newXDomain = currentXDomain; // Revert to previous domain
                 domainChangedX = false; // Mark as unchanged
             }
@@ -362,7 +383,11 @@ class StreamingChart {
         if (domainChangedY) {
             const newHeight = Math.abs(newYDomain[1] - newYDomain[0]);
             if (newHeight < minDomainHeight || newHeight > maxDomainHeight) {
-                // console.log(`Y-Domain height ${newHeight.toFixed(3)} out of bounds [${minDomainHeight}, ${maxDomainHeight}]. Reverting Y.`);
+                 // --- Debug log ---
+                 if (this.#config.debug) {
+                     console.log(`[DEBUG] Y-Domain height ${newHeight.toFixed(3)} out of bounds [${minDomainHeight}, ${maxDomainHeight}]. Reverting Y.`);
+                 }
+                 // --- End Debug log ---
                 newYDomain = currentYDomain; // Revert to previous domain
                 domainChangedY = false; // Mark as unchanged
             }
@@ -370,6 +395,16 @@ class StreamingChart {
         // --- End NEW ---
 
         const domainChanged = domainChangedX || domainChangedY;
+
+        // --- NEW: Debug log after limits ---
+        if (this.#config.debug && (domainChangedX || domainChangedY)) {
+             console.log(`[DEBUG] Domains AFTER limits: X=[${newXDomain.map(d => d.toFixed(3)).join(', ')}], Y=[${newYDomain.map(d => d.toFixed(3)).join(', ')}]`);
+        } else if (this.#config.debug && !(domainChangedX || domainChangedY) && (isAltZoom || isShiftZoom || sourceEvent)) {
+             // Log only if there was an attempt to change but it got reverted or was invalid
+             console.log(`[DEBUG] No valid domain change detected after applying limits.`);
+        }
+        // --- End NEW ---
+
 
         // --- Apply Changes and Update References/Initial/ZoomState ---
         if (domainChanged) {
