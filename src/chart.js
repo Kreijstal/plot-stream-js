@@ -262,7 +262,6 @@ class StreamingChart {
 
         // ** Guard against events triggered by our own zoom.transform calls **
         if (this.#isProgrammaticZoom) {
-            // console.log("Ignoring programmatic zoom event");
             return;
         }
 
@@ -279,30 +278,20 @@ class StreamingChart {
         }
 
         // Set zooming flag (useful for addData logic)
-        this.#isZoomingOrPanning = true; // Set flag when interaction starts
-        // We need a way to reset this flag. D3 zoom doesn't have a distinct 'end' event
-        // when using only the 'zoom' listener. We might need a debounce/timer or
-        // rely on the fact that redraws outside of this handler will see the flag.
-        // For now, let's assume redraw() or other actions will reset it if needed,
-        // or maybe reset it after a short delay if no further zoom events occur.
-        // Let's add a simple debounce for resetting the flag.
+        this.#isZoomingOrPanning = true;
         clearTimeout(this._zoomEndTimer);
         this._zoomEndTimer = setTimeout(() => { this.#isZoomingOrPanning = false; }, 150);
 
+        const currentXDomain = this.#scales.xScale.domain(); // Get current domains *before* calculating new ones
+        const currentYDomain = this.#scales.yScale.domain();
+        let newXDomain = [...currentXDomain]; // Start with current domains
+        let newYDomain = [...currentYDomain];
+        let domainChangedX = false;
+        let domainChangedY = false;
+        let isAltZoom = false;
+        let isShiftZoom = false;
 
-        // console.log(
-        //     `Zoom event: type=${event.type}, source=${sourceEvent?.type}, alt=${
-        //     sourceEvent?.altKey
-        //     }, shift=${sourceEvent?.shiftKey}, k=${transform.k.toFixed(3)}`
-        // );
-
-        let newXDomain = this.#scales.xScale.domain(); // Start with current drawing domains
-        let newYDomain = this.#scales.yScale.domain();
-        let domainChanged = false;
-        let isAltZoom = false; // Reset flag for this event
-        let isShiftZoom = false; // Flag for horizontal/X-axis zoom
-
-        const independentZoomFactor = 1.5; // Make configurable?
+        const independentZoomFactor = 1.5;
 
         // --- Alt+Scroll Logic (Y-axis zoom) ---
         if (sourceEvent && sourceEvent.type === "wheel" && sourceEvent.altKey) {
@@ -311,21 +300,17 @@ class StreamingChart {
             const wheelDeltaY = sourceEvent.deltaY || 0;
             const pointerY_svg = sourceEvent.offsetY;
             const pointerY_plot = pointerY_svg - this.#margin.top;
-
-            // Zoom direction based on vertical scroll
             const zoomDirection = wheelDeltaY < 0 ? independentZoomFactor : 1 / independentZoomFactor;
             const yValue_plot = this.#referenceYScale.invert(pointerY_plot);
-            const [y0, y1] = this.#referenceYScale.domain(); // Use reference scale!
+            const [y0, y1] = this.#referenceYScale.domain();
 
             newYDomain = [
                 yValue_plot + (y0 - yValue_plot) / zoomDirection,
                 yValue_plot + (y1 - yValue_plot) / zoomDirection
             ];
-            domainChanged = true;
-            // console.log("Alt+Zoom (Y)");
+            domainChangedY = true;
         }
         // --- Shift+Scroll Logic (X-axis zoom) ---
-        // Trigger on shift key OR if horizontal delta is clearly dominant
         else if (
             sourceEvent &&
             sourceEvent.type === "wheel" &&
@@ -337,51 +322,66 @@ class StreamingChart {
             const wheelDeltaX = sourceEvent.deltaX || 0;
             const pointerX_svg = sourceEvent.offsetX;
             const pointerX_plot = pointerX_svg - this.#margin.left;
-
-            // Zoom direction based on horizontal scroll
             const zoomDirection = wheelDeltaX < 0 ? independentZoomFactor : 1 / independentZoomFactor;
             const xValue_plot = this.#referenceXScale.invert(pointerX_plot);
-            const [x0, x1] = this.#referenceXScale.domain(); // Use reference scale!
+            const [x0, x1] = this.#referenceXScale.domain();
             newXDomain = [
                 xValue_plot + (x0 - xValue_plot) / zoomDirection,
                 xValue_plot + (x1 - xValue_plot) / zoomDirection
             ];
-            domainChanged = true;
-            // console.log("Shift+Zoom (X)");
+            domainChangedX = true;
         }
         // --- Standard Zoom/Pan Logic ---
-        else if (sourceEvent) { // Only apply standard zoom if triggered by user event
-            // Apply the event's transform relative to our *initial* scales
+        else if (sourceEvent) {
             newXDomain = transform.rescaleX(this.#initialXScale).domain();
             newYDomain = transform.rescaleY(this.#initialYScale).domain();
-            domainChanged = true;
+            domainChangedX = true;
+            domainChangedY = true;
 
             // Update internal state tracking based on the *event's* transform
             this.#currentZoomTransform = transform;
             this.#lastZoomLevel = transform.k;
-            // console.log("Standard Zoom/Pan");
         } else {
-             // This case might happen on programmatic transform calls if the guard fails
-             // Or potentially other D3 internal events. Let's ignore them for domain changes.
              console.log("Zoom event with no sourceEvent, ignoring for domain change.");
         }
 
+        // --- NEW: Enforce Domain Width/Height Limits ---
+        const { minDomainWidth, maxDomainWidth } = this.#config.xAxis;
+        const { minDomainHeight, maxDomainHeight } = this.#config.yAxis;
+
+        if (domainChangedX) {
+            const newWidth = Math.abs(newXDomain[1] - newXDomain[0]);
+            if (newWidth < minDomainWidth || newWidth > maxDomainWidth) {
+                // console.log(`X-Domain width ${newWidth.toFixed(3)} out of bounds [${minDomainWidth}, ${maxDomainWidth}]. Reverting X.`);
+                newXDomain = currentXDomain; // Revert to previous domain
+                domainChangedX = false; // Mark as unchanged
+            }
+        }
+
+        if (domainChangedY) {
+            const newHeight = Math.abs(newYDomain[1] - newYDomain[0]);
+            if (newHeight < minDomainHeight || newHeight > maxDomainHeight) {
+                // console.log(`Y-Domain height ${newHeight.toFixed(3)} out of bounds [${minDomainHeight}, ${maxDomainHeight}]. Reverting Y.`);
+                newYDomain = currentYDomain; // Revert to previous domain
+                domainChangedY = false; // Mark as unchanged
+            }
+        }
+        // --- End NEW ---
+
+        const domainChanged = domainChangedX || domainChangedY;
 
         // --- Apply Changes and Update References/Initial/ZoomState ---
         if (domainChanged) {
-            // Apply to drawing scales
+            // Apply potentially modified domains to drawing scales
             this.#scales.xScale.domain(newXDomain);
             this.#scales.yScale.domain(newYDomain);
 
             // *** ALWAYS update reference scales to match the new drawing state ***
             this.#referenceXScale.domain(newXDomain);
             this.#referenceYScale.domain(newYDomain);
-            // console.log("  Updated reference scales to match new drawing state.");
 
             if (isAltZoom || isShiftZoom) {
                 // Handle Alt/Shift+Zoom specific state updates AFTER applying domain changes
-                console.log("  Alt/Shift+Zoom event: Updating initial scales, internal state, and resetting D3 transform.");
-
                 // Update the initial scales to reflect this new base state
                 this.#initialXScale.domain(newXDomain);
                 this.#initialYScale.domain(newYDomain);
@@ -405,34 +405,11 @@ class StreamingChart {
                 this.#frozenYDomain = newYDomain;
             }
 
-            // Log final state
-            // if (this.#config.debug) { // Add debug config later if needed
-            //     const format = (d) => d.toFixed(3);
-            //     console.log(
-            //         `  Applied Viewport: X=[${format(this.#scales.xScale.domain()[0])}, ${format(
-            //         this.#scales.xScale.domain()[1]
-            //         )}], Y=[${format(this.#scales.yScale.domain()[0])}, ${format(this.#scales.yScale.domain()[1])}]`
-            //     );
-            //     // Log initial scales ONLY if alt/shift zoom happened, as they should match Applied Viewport then
-            //     if (isAltZoom || isShiftZoom)
-            //         console.log(
-            //         `  Initial Scales now: X=[${format(
-            //             this.#initialXScale.domain()[0]
-            //         )}, ${format(this.#initialXScale.domain()[1])}], Y=[${format(
-            //             this.#initialYScale.domain()[0]
-            //         )}, ${format(this.#initialYScale.domain()[1])}]`
-            //         );
-            //     console.log(` Current transform k: ${this.#currentZoomTransform.k.toFixed(3)}`)
-            // }
-
             // Request redraw using the updated scales
             this.#redrawOnZoom();
 
-            // Dispatch a custom event if needed (optional)
-            // this.#svgElements.svg.dispatch("plotzoom", { detail: { ... } });
-
         } else {
-            // console.log("  No domain change detected in zoom event.");
+            // console.log("  No valid domain change detected in zoom event.");
             // Still update the flag if needed
             clearTimeout(this._zoomEndTimer);
             this._zoomEndTimer = setTimeout(() => { this.#isZoomingOrPanning = false; }, 150);

@@ -7,12 +7,16 @@ const defaultConfig = {
     range: { min: null, max: null },
     label: "",
     showGridLines: true,
-    maxTrackX: Infinity // NEW: Max X-axis duration to show when following
+    maxTrackX: Infinity, // Max X-axis duration to show when following
+    minDomainWidth: 0.01, // Minimum allowed |xMax - xMin|
+    maxDomainWidth: Infinity // Maximum allowed |xMax - xMin|
   },
   yAxis: {
     range: { min: null, max: null },
     label: "",
-    showGridLines: true
+    showGridLines: true,
+    minDomainHeight: 0.01, // Minimum allowed |yMax - yMin|
+    maxDomainHeight: Infinity // Maximum allowed |yMax - yMin|
   },
   series: {},
   interactions: {
