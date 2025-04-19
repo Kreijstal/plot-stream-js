@@ -272,9 +272,9 @@ function updateFollowButtonAppearance(buttonGroup, isFollowing) {
 function updateFollowButtonPosition(buttonGroup, margin, width, height) {
     if (!buttonGroup || buttonGroup.empty()) return;
 
-    const buttonBBox = buttonGroup.node()?.getBBox() || { width: 0, height: 0 };
-    const x = margin.left + width - buttonBBox.width - 10;
-    const y = margin.top + 10;
+    // Position calculation moved to top-left
+    const x = margin.left + 10; // Position near the left margin
+    const y = margin.top + 10; // Position near the top margin
 
     buttonGroup.attr("transform", `translate(${x}, ${y})`);
 }
