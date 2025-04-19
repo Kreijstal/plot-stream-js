@@ -324,6 +324,10 @@ module.exports = {
     addAxisLabels,
     updateAxisLabelsText,
     setupResizeObserver,
-    handleResize,
-    cleanupDOM
+    handleResize, // Make sure the name matches the function definition
+    cleanupDOM,
+    // --- ADD THESE ---
+    createFollowButton,
+    updateFollowButtonAppearance,
+    getFollowButtonPosition,
 };

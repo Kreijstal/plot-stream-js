@@ -9,7 +9,19 @@ const { initSeriesConfigs, getDefaultSeriesConfig, pruneData, ensureSeriesExists
 const { initializeScales, initializeAxes, getFullXDomain, getFullYDomain, calculateXDomain, calculateYDomain, updateScaleDomains, updateAxes } = require('./scalesAxes');
 const { initializeLineGenerator, updateGridLines, updateLines, updateLegend, getLegendPosition } = require('./rendering');
 const { initializeZoom, applyZoomBehavior, updateZoomExtents, handleZoom } = require('./zoom');
-const { calculateDimensions, createSVGStructure, addAxisLabels, updateAxisLabelsText, setupResizeObserver, handleResize, cleanupDOM } = require('./dom');
+const {
+    calculateDimensions, // Keep existing ones
+    createSVGStructure,
+    addAxisLabels,
+    updateAxisLabelsText,
+    setupResizeObserver,
+    handleResize, // Use the correct name (it was likely handleResize before)
+    cleanupDOM,
+    // --- ADD THESE ---
+    createFollowButton,
+    updateFollowButtonAppearance, // Needed for the helper method
+    getFollowButtonPosition       // Needed for the helper method
+} = require('./dom');
 
 class StreamingChart {
     // --- Private Instance Members ---
