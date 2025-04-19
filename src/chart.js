@@ -219,8 +219,21 @@ class StreamingChart {
     #updateScalesAndAxes(animate = false, transition = null) {
         if (this.#isDestroyed || !this.#targetElement) return; // No DOM elements
 
-        const isZoomed = this.#currentZoomTransform && this.#currentZoomTransform !== this.#d3.zoomIdentity;
-        updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore, isZoomed);
+        // Check if the user is currently zoomed/panned away from the identity state
+        // Use d3.zoomIdentity for comparison
+        const isZoomed = this.#currentZoomTransform &&
+                         this.#currentZoomTransform !== this.#d3.zoomIdentity; // Correctly check against identity
+
+        // Only recalculate domains based on data/config if the user is NOT actively zoomed/panned.
+        if (!isZoomed) {
+            // This function calculates domains based on config rules and full/visible data
+            updateScaleDomains(this.#d3, this.#config, this.#scales, this.#dataStore);
+        }
+        // ELSE: If zoomed, the scale domains were already set by the zoom handler (#onZoom -> handleZoom)
+        // and should not be overridden here.
+
+        // Always update the visual appearance of the axes and grid lines based on the
+        // *current* state of the scales (whether they were just updated by updateScaleDomains or previously by zoom)
         updateAxes(this.#svgElements, this.#axesGenerators, this.#scales, this.#height, animate, transition);
         updateGridLines(this.#d3, this.#svgElements, this.#scales, this.#config, this.#width, this.#height);
     }
