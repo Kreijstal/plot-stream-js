@@ -1,0 +1,29 @@
+{
+  "name": "plot-stream-js",
+  "version": "1.0.0",
+  "description": "A streaming chart library using D3.js",
+  "main": "lib.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "d3",
+    "chart",
+    "visualization",
+    "streaming",
+    "data"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "d3": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.4.0"
+  },
+  "files": [
+    "lib.js",
+    "src/"
+  ]
+}
