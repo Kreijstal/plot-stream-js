@@ -15,7 +15,7 @@
     "data"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "AGPL-3",
   "peerDependencies": {
     "d3": "^7.0.0"
   },
