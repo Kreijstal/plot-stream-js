@@ -12,15 +12,8 @@ A JavaScript library for plotting real-time, streaming data efficiently using D3
 
 *   **Real-time Data Plotting:** Optimized for handling continuously arriving data points.
 *   **D3.js Powered:** Leverages the flexibility and power of D3.js v7 for scales, axes, and rendering.
-*   **Efficient Rendering:** Updates the chart efficiently as new data comes in.
-*   **Interactive:** Supports zooming (mouse wheel, pinch) and panning (drag). Includes independent zooming on X (Shift+Scroll) and Y (Alt+Scroll) axes.
-*   **"Follow" Mode:** Automatically scrolls the X-axis to keep the latest data in view. Can be toggled on/off via a UI button or programmatically.
-*   **Configurable:** Customize axis labels, ranges (fixed or auto-scaling), grid lines, series appearance (color, line width), legend visibility and position.
 *   **Dynamic Updates:** Update chart and series configurations on the fly.
 *   **Data Pruning:** Automatically limits the number of data points stored per series (`maxDataPointsPerSeries`) to manage memory usage.
-*   **CommonJS Module:** Designed for use in Node.js or browser environments using bundlers that support CommonJS.
-*   **Resource Management:** Includes a `destroy()` method to clean up SVG elements, event listeners, and observers, preventing memory leaks.
-*   **(Experimental) Headless Mode:** Can be instantiated without a target DOM element for potential off-screen calculations (though rendering features won't be active).
 
 ## Installation
 
@@ -220,7 +213,6 @@ The chart can be configured via the `initialConfig` object passed to the constru
     *   `label`: Legend label (string, defaults to `seriesId`).
     *   `color`: Line color (string, e.g., 'red', '#ff0000', defaults to D3 category10).
     *   `lineWidth`: Line thickness (number, default: `1.5`).
-    *   *(Future: `type`, `markerSize`)*
 *   `legend`:
     *   `visible`: `boolean` (default: `true`).
     *   `position`: `'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'` (default: `'top-right'`).
